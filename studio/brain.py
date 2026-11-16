@@ -164,61 +164,58 @@ def loud_zscore(db):
     return (db - np.median(db)) / (db.std() + 1e-6)
 
 
-def _is_rate_limit(err: Exception) -> bool:
+def _worth_retrying(err: Exception) -> bool:
+    """A fault worth one more try: the service was busy, or the connection dropped. A limit, a refused key or a
+    wrong model name is not, because asking the same key again a second later only wastes what is left of it."""
     s = str(err).lower()
-    return ("429" in s or "quota" in s or "rate limit" in s or "rate_limit" in s
-            or "exhausted" in s or "too many requests" in s or "credit" in s)
+    if "http 5" in s or "timed out" in s or "timeout" in s or "temporarily" in s or "overloaded" in s:
+        return True
+    # an httpx timeout often carries no message at all, so its class name is the only thing to go by
+    return type(err).__name__ in ("ReadTimeout", "ConnectTimeout", "WriteTimeout", "PoolTimeout",
+                                  "ConnectError", "RemoteProtocolError", "ReadError", "IncompleteRead")
 
 
 def ask_ai(prompt, schema=None, purpose="AI call"):
-    """Dispatch to the exact configured model. If rate-limited and opt-in fallback is enabled,
-    switches to the explicitly configured fallback model with complete audit logging."""
+    """Ask the AI, working down every key and model that is set up: the first model on the first key, then the
+    same model on the next key, then the next model, and last the backup service. A key that has hit its limit is
+    left alone until that limit lifts, so the call after it goes straight to one that still works.
+
+    Each attempt goes through the router, so it is recorded in the execution log, and every model is asked under
+    its own exact id: nothing is substituted for something else.
+
+    Returns (the answer, what answered, tokens used)."""
     if not config.ai_ready():
         raise RuntimeError("The AI is not set up on this server.")
-
-    ms = ai.models()
-    if not ms:
+    schema = schema or SCHEMA
+    ladder = ai.candidates()
+    if not ladder:
+        wait = ai.all_resting()
+        if wait:
+            raise RuntimeError("Every AI key has hit its limit. Autoclipper will try again in about "
+                               f"{max(1, int(wait // 60) + 1)} minutes.")
         raise RuntimeError("No AI model is configured.")
-
-    primary_model = ms[0]
-    last = None
-    hit_rate_limit = False
-
-    # 1. Deterministic primary call to exact model ID
-    for attempt in range(2):
-        try:
-            out, sent, wrote = ai.call(primary_model, prompt, schema or SCHEMA)
-            usage.record(sent, wrote, purpose)
-            ai.clear_problem()
-            return out, primary_model, sent + wrote
-        except Exception as e:  # noqa: BLE001
-            last = e
-            if _is_rate_limit(e):
-                hit_rate_limit = True
-                break
-            err_str = str(e).lower()
-            if "http 5" in err_str or "timed out" in err_str or "timeout" in err_str:
-                time.sleep(2 * (attempt + 1))
-                continue
-            break
-
-    # 2. Opt-in fallback policy: only switch if fallback is explicitly configured and primary hit limit/outage
-    if (hit_rate_limit or _is_rate_limit(last)) and ai.fallback_ready():
-        fb = ai.fallback()
-        fb_provider_label = ai.fallback_label()
-        fb_models = ai.fallback_models()
-        if fb_models:
-            fb_model = fb_models[0]
+    last, used, moved = None, None, 0
+    for cand in ladder:
+        for attempt in range(2):
             try:
-                out, sent, wrote = ai.call_fallback(fb_model, prompt, schema or SCHEMA)
-                usage.record(sent, wrote, f"{purpose} ({fb_provider_label})")
-                ai.note_fallback(ai.label(), fb_provider_label, str(last))
-                return out, f"{fb_model} ({fb_provider_label})", sent + wrote
-            except Exception as fb_err:  # noqa: BLE001
-                last = fb_err
-
-    ai.note_problem(last)
-    raise RuntimeError(f"The AI did not answer: {ai.explain(last) or last}")
+                out, sent, wrote = ai.call_candidate(cand, prompt, schema)
+                ai.note_success(cand)
+                ai.note_working(cand, tried=moved)
+                usage.record(sent, wrote, purpose if not cand["backup"] else f"{purpose} ({cand['label']})")
+                return out, ai.describe(cand), sent + wrote
+            except Exception as e:  # noqa: BLE001
+                last, used = e, cand
+                if ai.note_failure(cand, e):
+                    moved += 1                  # a limit, a dead key or a wrong model: straight on to the next
+                    break
+                if _worth_retrying(e) and attempt == 0:
+                    time.sleep(2)
+                    continue
+                break
+    prov = used.get("provider") if used else None
+    mdl = used.get("model") if used else None
+    ai.note_problem(last, prov=prov, mdl=mdl)
+    raise RuntimeError(f"The AI did not answer: {ai.explain(last, prov=prov, mdl=mdl) or last}")
 
 
 def sentence_ends(words) -> list:

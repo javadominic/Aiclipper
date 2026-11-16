@@ -57,7 +57,9 @@ check("no AI to begin with", (a["ready"], a["has_key"], st["ai"]["ready"]), (Fal
 check("the services are listed", [p["id"] for p in a["providers"]][:3], ["gemini", "openai", "xai"])
 put = lambda body: c.put("/api/ai", json=body, headers=ORIGIN)  # noqa: E731
 check("a service needs its key", put({"provider": "gemini", "models": "model-a"}).status_code, 400)
-check("...and a model", put({"provider": "gemini", "models": "", "key": KEY}).status_code, 400)
+r = put({"provider": "gemini", "models": "", "key": KEY})
+check("leaving the model blank fills in the ones this service is known to offer",
+      (r.status_code, r.json()["models"][:2]), (200, ["gemini-2.0-flash", "gemini-1.5-flash"]))
 check("an unknown service is refused", put({"provider": "nonsense", "models": "m", "key": KEY}).status_code, 400)
 check("a custom service needs an address", put({"provider": "custom", "models": "m"}).status_code, 400)
 check("an address must be a web address", put({"provider": "custom", "models": "m", "base_url": "file:///etc/passwd"}).status_code, 400)
@@ -117,6 +119,51 @@ check("the test asks the saved model and reports back", (r.status_code, r.json()
 put({"provider": "gemini", "models": "g-fast", "key": "wrong-key-000000000000"})
 r = post("/api/ai/test")
 check("a failed test says why, without the key", (r.status_code, "wrong-key-000000000000" in r.text), (502, False))
+
+
+# ---- a pool of keys: several for one service, and the next one takes over when one runs out
+K1, K2 = "pool-key-one-aaaa1111", "pool-key-two-bbbb2222"
+asked_keys = []
+
+
+def pool_post(url, json=None, headers=None, timeout=None, **_k):  # noqa: A002
+    k = (headers or {}).get("x-goog-api-key", "")
+    asked_keys.append(k)
+    if k == K1:
+        return Reply(429, {"error": {"message": "You exceeded your current quota for this model."}})
+    return Reply(200, {"candidates": [{"content": {"parts": [{"text": '["ok"]'}]}}],
+                       "usageMetadata": {"promptTokenCount": 9, "totalTokenCount": 12}})
+
+
+ai.httpx.post = pool_post
+r = put({"provider": "gemini", "models": "g-fast",
+         "keys": [{"key": K1, "label": "personal"}, {"key": K2, "label": "work"}]})
+check("a pool of keys is saved, in order", (r.status_code, [x["label"] for x in r.json()["keys"]]), (200, ["personal", "work"]))
+check("only the last four of each key come back", [x["hint"] for x in r.json()["keys"]], ["1111", "2222"])
+check("no key text reaches the page", K1 in r.text or K2 in r.text or K1 in c.get("/api/ai").text, False)
+check("the first key is still the one older code asks for", ai.key(), K1)
+check("both keys are scrubbed out of error text", [k for k in ai.all_keys()], [K1, K2])
+
+asked_keys.clear()
+r = post("/api/ai/test")
+check("the test asks every key and says which answered", (r.status_code, r.json()["models"], r.json()["model"]),
+      (200, ["g-fast (work)"], "g-fast (work)"))
+check("...and names the one that refused", [x["model"] for x in r.json()["refused"]], ["g-fast (personal)"])
+check("the dashboard can say why a key is greyed out",
+      [x["why"] for x in c.get("/api/ai").json()["keys"] if x["resting"]], ["Out of quota for today."])
+
+asked_keys.clear()
+ai.call_candidate(ai.candidates()[0], "x", ai.TINY_SCHEMA)
+check("a key that hit its quota is skipped from then on", asked_keys, [K2])
+
+r = put({"provider": "gemini", "models": "g-fast", "keys": [{"id": ai._kid(K2), "key": "", "label": "work"}]})
+check("a key can be dropped without pasting the others again",
+      (r.status_code, [(x["label"], x["hint"]) for x in r.json()["keys"]]), (200, [("work", "2222")]))
+r = put({"provider": "gemini", "models": "g-fast", "keys": [{"id": ai._kid(K2), "key": "", "label": "work"},
+                                                            {"key": K1, "label": "spare"}]})
+check("and another added alongside it", [x["label"] for x in r.json()["keys"]], ["work", "spare"])
+check("saving the settings again gives a resting key another chance",
+      ai.pool_status()["resting"], [])
 
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 import shutil  # noqa: E402

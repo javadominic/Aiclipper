@@ -1247,9 +1247,21 @@ def ai_usage():
 
 
 # ---------------------------------------------------------------- the AI key and model, set from the dashboard
-# Only the owner (or an admin, when accounts are on) reaches these. The key is never sent back to the page.
+# Only the owner (or an admin, when accounts are on) reaches these. No key is ever sent back to the page.
 def _ai_error(e) -> str:
-    return safe.friendly(e, 300).replace(ai.key() or "\0", "<key>")
+    """A service's own words about what went wrong, with every key in the pool scrubbed out. The key that failed
+    is not always the first one saved, so all of them have to go."""
+    out = safe.friendly(e, 300)
+    for secret in ai.all_keys():
+        out = out.replace(secret, "<key>")
+    return out
+
+
+def _kept_keys(body: dict):
+    """The pool of keys from the page, or None when it sent none: an older page, or one where only the single key
+    box was used. None means "leave the saved keys alone"."""
+    got = body.get("keys")
+    return got if isinstance(got, list) else None
 
 
 @app.get("/api/ai")
@@ -1264,7 +1276,8 @@ def ai_put(request: Request, body: dict = Body(...)):
     k = body.get("key")
     try:
         out = ai.save(body.get("provider"), body.get("models"), body.get("base_url") or "",
-                      None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k))
+                      None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k),
+                      keys=_kept_keys(body))
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
     usage.forget_all()
@@ -1274,15 +1287,18 @@ def ai_put(request: Request, body: dict = Body(...)):
 
 @app.post("/api/ai/models")
 def ai_models(request: Request, body: dict = Body(default={})):
+    """What this key may use, best first, plus the few Autoclipper suggests: the quick inexpensive ones that are
+    good for clipping. The page ticks the suggested ones by itself, so nobody has to know a model name."""
     _admin(request)
     _throttle("aimodels:" + ctx.uid(), 30, 600)
     try:
         force = bool(body.get("force", False))
-        return {"models": ai.list_models(body.get("provider"), body.get("base_url"), body.get("key"), force=force)}
+        got = ai.list_models(body.get("provider"), body.get("base_url"), body.get("key"), force=force)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, "The service did not give its list of models. Check the key, or type the model yourself. " + _ai_error(e)[:160])
+    return {"models": got, "suggested": got[:max(1, ai.AUTO_PICK)]}
 
 
 @app.get("/api/ai/registry")
@@ -1327,7 +1343,8 @@ def ai_fallback_put(request: Request, body: dict = Body(...)):
     k = body.get("key")
     try:
         out = ai.save_fallback(body.get("provider"), body.get("models"), body.get("base_url") or "",
-                               None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k))
+                               None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k),
+                               keys=_kept_keys(body))
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
     usage.forget_all()

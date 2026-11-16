@@ -113,6 +113,63 @@ with ctx.as_user(u1.id):
 with ctx.as_user(u2.id):
     check("another user sees none of it", usage.summary({})["calls_total"] == 0)
 
+# ---- a pool of keys: every key and model is tried before Autoclipper gives up
+K1, K2 = "rotate-key-one-1111", "rotate-key-two-2222"
+hit, out_of_quota = [], set()
+
+
+def rotate_post(url, json=None, headers=None, timeout=None, **_k):  # noqa: A002
+    k = (headers or {}).get("x-goog-api-key", "")
+    mdl = url.split("/models/")[-1].split(":")[0]
+    hit.append((k, mdl))
+    if (k, mdl) in out_of_quota or (k, "*") in out_of_quota:
+        return Reply(429, {"error": {"message": "You exceeded your current quota for this model."}})
+    return Reply(200, {"candidates": [{"content": {"parts": [{"text": json_text([CLIP])}]}}],
+                       "usageMetadata": {"promptTokenCount": 100, "totalTokenCount": 130}})
+
+
+ai.httpx.post = rotate_post
+config.AI_PROVIDER, config.AI_BASE_URL = "gemini", ""
+ai.save("gemini", "model-a, model-b", "", keys=[{"key": K1, "label": "one"}, {"key": K2, "label": "two"}])
+
+# note: check() in this file takes a true/false, not a pair to compare, so every assertion below has to say
+# "got == want" itself or it would pass without checking anything.
+ladder = [(c["model"], c["key_label"]) for c in ai.candidates()]
+check("the ladder is model-first: the best model on every key, then the next model",
+      ladder == [("model-a", "one"), ("model-a", "two"), ("model-b", "one"), ("model-b", "two")], str(ladder))
+
+out_of_quota = {(K1, "*")}
+hit.clear()
+with ctx.as_user(u1.id):
+    _o, used, _t = brain.ask_ai("hello", purpose="rotate")
+check("a key out of quota hands the SAME model to the next key",
+      (used, [m for _k, m in hit]) == ("model-a (two)", ["model-a", "model-a"]), str((used, hit)))
+
+hit.clear()
+with ctx.as_user(u1.id):
+    _o, used, _t = brain.ask_ai("hello", purpose="rotate")
+check("the spent key is not asked again on the next call", [k for k, _m in hit] == [K2], str(hit))
+
+out_of_quota = {(K1, "model-a"), (K2, "model-a")}
+ai.reset_state()
+hit.clear()
+with ctx.as_user(u1.id):
+    _o, used, _t = brain.ask_ai("hello", purpose="rotate")
+check("with every key spent on the best model it drops to the next one",
+      (used, [m for _k, m in hit]) == ("model-b (one)", ["model-a", "model-a", "model-b"]), str((used, hit)))
+
+out_of_quota = {(K1, "*"), (K2, "*")}
+ai.reset_state()
+try:
+    with ctx.as_user(u1.id):
+        brain.ask_ai("hello", purpose="rotate")
+    check("it gives up loudly", False)
+except RuntimeError as e:
+    check("it says the keys hit their limit, not that the AI is missing", "limit" in str(e), str(e))
+check("nothing is left to try while every key rests", ai.candidates() == [], str(ai.candidates()))
+check("...and it knows how long to wait before trying again", ai.all_resting() > 0, str(ai.all_resting()))
+ai.reset_state()
+
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 import shutil  # noqa: E402
 db.engine.dispose()
