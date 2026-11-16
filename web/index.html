@@ -1568,7 +1568,7 @@
       color: var(--faint)
     }
 
-    label.f {
+    .f {
       display: flex;
       flex-direction: column;
       gap: 7px;
@@ -3211,6 +3211,92 @@
       gap: 10px;
       flex-wrap: wrap;
       margin-bottom: 18px
+    }
+
+    /* The models this key may use, as things to click on rather than names to type. */
+    .mpick {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 9px;
+      max-height: 172px;
+      overflow-y: auto
+    }
+
+    .mpick .chip {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px
+    }
+
+    .mpick .chip b {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 17px;
+      height: 17px;
+      margin-left: -4px;
+      border-radius: 999px;
+      background: var(--brand-ink);
+      color: #fff;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700
+    }
+
+    /* The pool of keys: one row each, with whether it is ready or resting after a limit. */
+    .keylist {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-bottom: 9px
+    }
+
+    .keyrow {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 8px 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--muted);
+      font-size: 13px
+    }
+
+    .keyrow b {
+      font-weight: 600;
+      color: var(--text)
+    }
+
+    .keyrow code {
+      font-family: inherit;
+      color: var(--dim);
+      letter-spacing: .04em
+    }
+
+    .keyrow i {
+      margin-left: auto;
+      font-style: normal;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--good);
+      white-space: nowrap
+    }
+
+    .keyrow.rest {
+      background: var(--brand-soft);
+      border-color: var(--brand-line)
+    }
+
+    .keyrow.rest i {
+      color: var(--brand-deep)
+    }
+
+    .keyrow.new {
+      border-style: dashed
+    }
+
+    .keyrow .btn.icon {
+      margin-left: 2px
     }
 
     .set-sec {
@@ -6399,7 +6485,7 @@
       const toolBar = S.status.no_ffmpeg ? `<div class="vb" role="alert">${ic("warn")}<span><b>Autoclipper can't make clips yet: ffmpeg isn't installed on this computer.</b> Open a terminal, run <code>winget install Gyan.FFmpeg</code> (Mac: <code>brew install ffmpeg-full</code>, Linux: <code>sudo apt install ffmpeg</code>), then close Autoclipper and start it again.</span></div>` : "";
       const isFb = S.status.ai?.is_fallback;
       const aiBar = !toolBar && S.status.ai?.problem && me?.is_admin && S.view !== "settings" ? (
-        isFb ? `<div class="vb" style="background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.35);color:#92400e" role="status">${ic("bolt")}<span><b>Switched to backup AI (${esc(S.status.ai.fallback_provider || "Groq")}):</b> ${esc(S.status.ai.problem)} Clips are continuing to process.</span><button class="btn sm" data-act="go" data-v="settings" data-tab="ai">AI settings</button></div>`
+        isFb ? `<div class="vb" style="background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.35);color:#92400e" role="status">${ic("bolt")}<span><b>Still clipping.</b> ${esc(S.status.ai.problem)}</span><button class="btn sm" data-act="go" data-v="settings" data-tab="ai">AI settings</button></div>`
           : `<div class="vb" role="status">${ic("warn")}<span><b>The AI isn't answering.</b> ${esc(S.status.ai.problem)} Until then, clips are picked by loudness.</span><button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">Open AI settings</button></div>`
       ) : "";
       const diskBar = !toolBar && S.status.disk_full && S.view !== "settings" ? `<div class="vb" role="alert">${ic("warn")}<span><b>The drive Autoclipper saves to is almost full, so it can't take new videos.</b> Free up space on it, or move Autoclipper's folder to a bigger drive.</span>${me?.is_admin ? `<button class="btn sm primary" data-act="go" data-v="settings" data-tab="storage">Open Storage</button>` : ""}</div>` : "";
@@ -7122,26 +7208,111 @@
       ["security", "Security", "lock", "Password and signing out"]]),
       ["apps", "Connected apps", "plug", "Where your clips get posted"],
       ...(S.status.user?.is_admin ? [["storage", "Storage", "folder", "Where videos and clips are kept"]] : [])];
-    function aiHints() {
-      const k = S.ai, sel = $("#ai_provider"); if (!k || !sel) return;
-      const pv = k.providers.find(x => x.id === sel.value) || k.providers[0], same = pv.id === k.provider;
-      $("#ai_key").placeholder = same && k.has_key ? `Saved${k.key_hint ? ", ends in " + k.key_hint : ""}. Paste a new key to replace it` : pv.needs_key ? "Paste your key" : "Not needed";
-      $("#ai_keyhint").innerHTML = pv.key_url ? `${pv.needs_key ? "Get a key at" : "Set it up at"} <a href="${esc(pv.key_url)}" target="_blank" rel="noopener">${esc(pv.key_url.replace("https://", ""))}</a>. The key stays on this server and is never shown again.` : "The key stays on this server and is never shown again.";
-      $("#ai_model").placeholder = pv.example ? "For example " + pv.example : "The model id, exactly as the service names it";
-      if (!$("#ai_model").value && pv.example) $("#ai_model").value = pv.example;
-      $("#ai_base").placeholder = pv.address || "http://127.0.0.1:1234/v1";
-      $("#ai_basewrap").hidden = pv.id !== "custom" && !(same && k.base_url);
+    // The two AI forms (the service in use, and the backup) are the same shape, so one set of functions draws
+    // both. `p` is the id prefix: "ai_" or "ai_fb_".
+    const AI_PFX = ["ai_", "ai_fb_"];
+    function pick(p) {
+      S.pick = S.pick || {};
+      return S.pick[p] || (S.pick[p] = { models: [], suggested: [], added: [], removed: [], labels: {}, why: "" });
     }
-    function aiFbHints() {
-      const k = S.ai, sel = $("#ai_fb_provider"); if (!k || !sel) return;
-      const pv = k.providers.find(x => x.id === sel.value) || k.providers[0], same = pv.id === k.fallback_provider;
-      if ($("#ai_fb_key")) $("#ai_fb_key").placeholder = same && k.fallback_has_key ? `Saved${k.fallback_key_hint ? ", ends in " + k.fallback_key_hint : ""}. Paste a new key to replace it` : pv.needs_key ? "Paste your key" : "Not needed";
-      if ($("#ai_fb_keyhint")) $("#ai_fb_keyhint").innerHTML = pv.key_url ? `${pv.needs_key ? "Get a key at" : "Set it up at"} <a href="${esc(pv.key_url)}" target="_blank" rel="noopener">${esc(pv.key_url.replace("https://", ""))}</a>. Stored securely on this server.` : "";
-      if ($("#ai_fb_model")) $("#ai_fb_model").placeholder = pv.example ? "For example " + pv.example : "The model id";
-      if ($("#ai_fb_model") && !$("#ai_fb_model").value && pv.example) $("#ai_fb_model").value = pv.example;
-      if ($("#ai_fb_base")) $("#ai_fb_base").placeholder = pv.address || "http://127.0.0.1:1234/v1";
-      if ($("#ai_fb_basewrap")) $("#ai_fb_basewrap").hidden = pv.id !== "custom" && !(same && k.fallback_base_url);
+    const savedKeys = p => (p === "ai_" ? S.ai?.keys : S.ai?.fallback_keys) || [];
+    const savedProv = p => (p === "ai_" ? S.ai?.provider : S.ai?.fallback_provider) || "";
+    const savedBase = p => (p === "ai_" ? S.ai?.base_url : S.ai?.fallback_base_url) || "";
+    const savedModels = p => (p === "ai_" ? S.ai?.models : S.ai?.fallback_models) || [];
+    const modelsOf = p => ($("#" + p + "model")?.value || "").split(",").map(s => s.trim()).filter(Boolean);
+    const restWait = s => s < 5400 ? `${Math.max(1, Math.round(s / 60))} min` : `${Math.max(1, Math.round(s / 3600))} h`;
+
+    function setModels(p, list) {
+      const box = $("#" + p + "model"); if (!box) return;
+      box.value = [...new Set(list)].slice(0, S.ai?.max_models || 12).join(", ");
+      drawPick(p);
     }
+
+    function drawKeys(p) {
+      const box = $("#" + p + "keys"); if (!box) return;
+      const st = pick(p), kept = savedKeys(p).filter(x => !st.removed.includes(x.id));
+      const rows = kept.map(x => `<span class="keyrow ${x.resting ? "rest" : ""}"><b>${esc(x.label)}</b><code>····${esc(x.hint)}</code>
+          <i>${x.resting ? `${esc(x.why)} Back in ${restWait(x.resting)}.` : "Ready"}</i>
+          <button type="button" class="btn icon sm" data-act="aiunkey" data-p="${p}" data-id="${esc(x.id)}" aria-label="Remove ${esc(x.label)}">${ic("x")}</button></span>`)
+        .concat(st.added.map((x, i) => `<span class="keyrow new"><b>${esc(x.label || `Key ${kept.length + i + 1}`)}</b><code>····${esc(x.key.slice(-4))}</code>
+          <i>New, kept when you press Save</i>
+          <button type="button" class="btn icon sm" data-act="aiunnew" data-p="${p}" data-i="${i}" aria-label="Remove this new key">${ic("x")}</button></span>`));
+      box.innerHTML = rows.length ? rows.join("") : `<span class="hint">No key saved yet.</span>`;
+    }
+
+    function drawPick(p) {
+      const box = $("#" + p + "pick"); if (!box) return;
+      const st = pick(p), chosen = modelsOf(p), hint = $("#" + p + "pickhint");
+      if (!st.models.length) {
+        box.innerHTML = "";
+        if (hint) hint.textContent = st.why || 'Press "Find models" and Autoclipper will list everything this key may use, quickest and cheapest first. Click them in the order you want them tried.';
+        return;
+      }
+      box.innerHTML = st.models.map(m => {
+        const i = chosen.indexOf(m);
+        return `<button type="button" class="chip ${i >= 0 ? "on" : ""}" data-act="aipick" data-p="${p}" data-m="${esc(m)}" aria-pressed="${i >= 0}" title="${i >= 0 ? `Tried ${i + 1} of ${chosen.length}. Click to remove.` : "Click to add."}">${i >= 0 ? `<b>${i + 1}</b>` : ""}${esc(m)}</button>`;
+      }).join("");
+      if (hint) hint.textContent = chosen.length
+        ? `${chosen.length} of ${st.models.length} will be tried, in the order numbered. The first one that still has quota answers, so one key running out no longer stops your clips.`
+        : `${st.models.length} models this key may use. Click to add, or press "Pick for me".`;
+    }
+
+    function aiHints(p) {
+      const k = S.ai, sel = $("#" + p + "provider"); if (!k || !sel) return;
+      const pv = k.providers.find(x => x.id === sel.value) || k.providers[0], st = pick(p);
+      const same = pv.id === savedProv(p);
+      const have = savedKeys(p).filter(x => !st.removed.includes(x.id)).length + st.added.length;
+      $("#" + p + "key").placeholder = pv.needs_key ? (have ? "Add another key (optional)" : "Paste your key") : "Not needed";
+      $("#" + p + "keyhint").innerHTML = (pv.key_url ? `${pv.needs_key ? "Get a key at" : "Set it up at"} <a href="${esc(pv.key_url)}" target="_blank" rel="noopener">${esc(pv.key_url.replace("https://", ""))}</a>. ` : "")
+        + "Keys are kept on this server and never shown again. Save as many as you like: when one hits its limit the next takes over.";
+      $("#" + p + "model").placeholder = pv.example ? "For example " + pv.example : "The model id, exactly as the service names it";
+      $("#" + p + "base").placeholder = pv.address || "http://127.0.0.1:1234/v1";
+      $("#" + p + "basewrap").hidden = pv.id !== "custom" && !(same && savedBase(p));
+      drawKeys(p); drawPick(p);
+    }
+
+    // Ask the service what this key may use, and tick the quick cheap ones by themselves. This is why nobody has
+    // to know a model name: paste a key and the list appears with the right ones already chosen. `force` skips
+    // the registry's cache and asks the service again.
+    async function autoModels(p, say, force) {
+      const k = S.ai, sel = $("#" + p + "provider"); if (!k || !sel) return;
+      const pv = k.providers.find(x => x.id === sel.value) || k.providers[0], st = pick(p);
+      const typed = ($("#" + p + "key").value || "").trim();
+      if (!typed && pv.needs_key && !savedKeys(p).some(x => !st.removed.includes(x.id))) {
+        st.models = []; st.why = `Paste your ${pv.label} key, then press "Find models".`; return drawPick(p);
+      }
+      st.why = "";
+      try {
+        const r = await send("/api/ai/models", { provider: sel.value, base_url: $("#" + p + "base").value, key: typed, force: !!force });
+        st.models = r.models || []; st.suggested = r.suggested || [];
+        if (!modelsOf(p).length && st.suggested.length) setModels(p, st.suggested); else drawPick(p);
+        if (say) toast(st.models.length ? `${force ? "Refreshed. " : ""}${st.models.length} models this key may use. The quickest and cheapest are already ticked.` : "The service listed no models. Type the model yourself.", st.models.length ? "ok" : "");
+      } catch (err) {
+        st.models = []; st.why = err.message; drawPick(p);
+        if (say) toast(err.message, "bad");
+      }
+    }
+
+    // The pool to save: the keys already on the server (by id, with no key text, because the page never has it)
+    // plus the ones pasted since. A saved key left out here has been removed.
+    function poolOf(p) {
+      const st = pick(p);
+      return savedKeys(p).filter(x => !st.removed.includes(x.id))
+        .map(x => ({ id: x.id, key: "", label: st.labels[x.id] ?? x.label }))
+        .concat(st.added.map(x => ({ key: x.key, label: x.label })));
+    }
+
+    const aiForm = (p, names) => `<div class="ai-form">
+        <label class="f">${names.service}<select id="${p}provider">${S.ai.providers.map(x => `<option value="${esc(x.id)}" ${x.id === (savedProv(p) || (p === "ai_fb_" ? "groq" : "")) ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
+        <div class="f">${names.keys}<div class="keylist" id="${p}keys"></div>
+          <span class="with"><input id="${p}key" type="password" autocomplete="off" spellcheck="false"><button class="btn" type="button" data-act="aiaddkey" data-p="${p}">${ic("plus")}Add key</button></span>
+          <span class="hint" id="${p}keyhint"></span></div>
+        <label class="f" id="${p}basewrap">Address<input id="${p}base" value="${esc(savedBase(p))}" spellcheck="false"><span class="hint">Where the service answers. Only needed for a custom service.</span></label>
+        <div class="f">${names.models}<span class="with"><input id="${p}model" value="${esc(savedModels(p).join(", "))}" placeholder="(Leave blank to use the recommended ones)" spellcheck="false"><button class="btn" type="button" data-act="aimodels" data-p="${p}">Find models</button><button class="btn ghost" type="button" data-act="airefresh" data-p="${p}" title="Bypass the cache and ask the service again">Refresh</button></span>
+          <div class="row" style="gap:8px;margin-top:9px"><button class="btn sm" type="button" data-act="aibest" data-p="${p}">${ic("bulb")}Pick for me</button><button class="btn sm ghost" type="button" data-act="aiclear" data-p="${p}">Clear</button></div>
+          <div class="mpick" id="${p}pick" role="group" aria-label="${names.models}"></div>
+          <span class="hint" id="${p}pickhint"></span></div>
+      </div>`;
     async function drawSettings() {
       const box = $("#sform"); if (!box) return;
       const tab = S.stab || setTabs()[0][0], me = S.status.user;
@@ -7152,27 +7323,17 @@
       try {
         if (tab === "ai") {
           const k = S.ai = await api("/api/ai");
-          body.innerHTML = `<section class="set-sec"><h2>Primary AI</h2><p class="help">Autoclipper uses an AI model to pick the moments worth clipping and to write hooks, titles and captions. Use your own key from any of these services.</p>
-          <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${esc(k.models[0] || "")}</span>` : `<span class="pill warn">Not set up</span><span class="sub">Choose a service, paste your key and pick a model.</span>`}</div>
-          <div class="ai-form">
-            <label class="f">AI service<select id="ai_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === k.provider ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
-            <label class="f">Key<input id="ai_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_keyhint"></span></label>
-            <label class="f" id="ai_basewrap">Address<input id="ai_base" value="${esc(k.base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for a custom service.</span></label>
-            <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button><button class="btn ghost" type="button" data-act="airefresh" title="Bypass cache and query provider API directly">Refresh</button></span>
-              <datalist id="ai_models"></datalist><span class="hint">A fast model is recommended (e.g. gemini-2.0-flash). Exact model ID is preserved.</span></label>
-          </div>
-          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>
+          S.pick = {};
+          const nKeys = (k.keys || []).length, nFb = (k.fallback_keys || []).length;
+          body.innerHTML = `<section class="set-sec"><h2>Primary AI</h2><p class="help">Autoclipper uses an AI model to pick the moments worth clipping and to write hooks, titles and captions. Use your own keys from any of these services. Save as many as you like: when one hits its limit the next takes over, so your clips keep coming.</p>
+          <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${nKeys} key${nKeys === 1 ? "" : "s"} · ${k.models.length} model${k.models.length === 1 ? "" : "s"}</span>` : `<span class="pill warn">Not set up</span><span class="sub">Choose a service, paste your key and press "Find models".</span>`}${k.using ? `<span class="pill brand">${ic("bolt")}Last answered: ${esc(k.using)}</span>` : ""}</div>
+          ${aiForm("ai_", { service: "AI service", keys: "Keys", models: "Models, in the order to try them" })}
+          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave" data-p="ai_">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest" data-p="ai_">Test again</button>` : ""}</div></section>
 
-          <section class="set-sec" style="margin-top:28px"><h2>Backup AI (Automatic Fallback)</h2><p class="help">When your primary AI service hits its rate limit or runs out of credits, Autoclipper automatically and instantly switches to this backup service so your clips never stop processing.</p>
-          <div class="ai-state">${k.fallback_ready ? `<span class="pill ok">${ic("bolt")}Backup Active</span><span class="sub">${esc(k.fallback_label || "Groq")} · ${esc((k.fallback_models || [])[0] || "")}</span>` : `<span class="pill warn">No backup configured</span><span class="sub">Add a backup service (e.g. Groq) to prevent interruptions when rate limits hit.</span>`}</div>
-          <div class="ai-form">
-            <label class="f">Backup service<select id="ai_fb_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === (k.fallback_provider || "groq") ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
-            <label class="f">Backup Key<input id="ai_fb_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_fb_keyhint"></span></label>
-            <label class="f" id="ai_fb_basewrap" hidden>Address<input id="ai_fb_base" value="${esc(k.fallback_base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for custom.</span></label>
-            <label class="f">Backup Model<span class="with"><input id="ai_fb_model" list="ai_fb_models" value="${esc((k.fallback_models || ["openai/gpt-oss-120b"]).join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aifbmodels">Find models</button></span>
-              <datalist id="ai_fb_models"></datalist><span class="hint">Recommended for fallback: Groq (openai/gpt-oss-120b). Fast and free.</span></label>
-          </div>
-          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aifbsave">Save backup</button>${k.fallback_ready ? `<button class="btn" data-act="aifbtest">Test backup</button><button class="btn ghost" data-act="aifbremove">Remove backup</button>` : ""}</div></section>
+          <section class="set-sec" style="margin-top:28px"><h2>Backup AI</h2><p class="help">Tried only once every key and model above has had its turn. Worth setting up when your main service is a free one: a second service keeps clips going after all of the first one's keys run out.</p>
+          <div class="ai-state">${k.fallback_ready ? `<span class="pill ok">${ic("bolt")}Backup active</span><span class="sub">${esc(k.fallback_label)} · ${nFb} key${nFb === 1 ? "" : "s"} · ${esc((k.fallback_models || [])[0] || "")}</span>` : `<span class="pill warn">No backup</span><span class="sub">Optional. A second service, for example Groq, which is fast and free.</span>`}</div>
+          ${aiForm("ai_fb_", { service: "Backup service", keys: "Backup keys", models: "Backup models, in the order to try them" })}
+          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave" data-p="ai_fb_">Save backup</button>${k.fallback_ready ? `<button class="btn" data-act="aitest" data-p="ai_fb_">Test backup</button><button class="btn ghost" data-act="aifbremove">Remove backup</button>` : ""}</div></section>
 
           ${(k.execution_logs && k.execution_logs.length) ? `<section class="set-sec" style="margin-top:28px"><h3>Model Execution Audit Log</h3><p class="help">Verifies that every AI request is routed to the exact validated model ID without silent substitutions.</p>
           <div style="overflow-x:auto;font-size:12px;margin-top:10px">
@@ -7190,8 +7351,9 @@
               </tr>`).join("")}</tbody>
             </table>
           </div></section>` : ""}`;
-          aiHints();
-          aiFbHints();
+          aiHints("ai_"); aiHints("ai_fb_");
+          autoModels("ai_");                                  // the models this key may use, without being asked
+          if (k.fallback_ready) autoModels("ai_fb_");
         }
         if (tab === "profile") {
           const joined = me.created_at ? new Date(me.created_at * 1000).toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" }) : "";
@@ -7445,20 +7607,17 @@
     document.addEventListener("drop", e => { const a = $(".composer"); if (a) { e.preventDefault(); a.classList.remove("over"); attach(e.dataTransfer.files); } });
     document.addEventListener("change", async e => {
       const t = e.target;
-      if (t.id === "ai_provider") {
-        $("#ai_models").innerHTML = "";
-        const pv = S.ai?.providers?.find(x => x.id === t.value);
-        if (pv && pv.example) $("#ai_model").value = pv.example;
-        if (S.ai && t.value !== S.ai.provider) { $("#ai_base").value = ""; }
-        return aiHints();
+      const aiPfx = t.id === "ai_provider" ? "ai_" : t.id === "ai_fb_provider" ? "ai_fb_" : "";
+      if (aiPfx) {
+        const st = pick(aiPfx);
+        st.models = []; st.suggested = []; st.why = "";
+        setModels(aiPfx, []);                 // the old service's model names mean nothing to the new one
+        if (t.value !== savedProv(aiPfx)) $("#" + aiPfx + "base").value = "";
+        aiHints(aiPfx);
+        return autoModels(aiPfx);             // list what this key may use without being asked
       }
-      if (t.id === "ai_fb_provider") {
-        $("#ai_fb_models").innerHTML = "";
-        const pv = S.ai?.providers?.find(x => x.id === t.value);
-        if (pv && pv.example) $("#ai_fb_model").value = pv.example;
-        if (S.ai && t.value !== S.ai.fallback_provider) { $("#ai_fb_base").value = ""; }
-        return aiFbHints();
-      }
+      const keyPfx = t.id === "ai_key" ? "ai_" : t.id === "ai_fb_key" ? "ai_fb_" : "";
+      if (keyPfx) return autoModels(keyPfx);  // a key pasted and left: show what it may use
       if (t.dataset.sel) {
         const k = t.dataset.sel;
         if (t.checked) sel().add(k); else sel().delete(k);
@@ -7489,46 +7648,63 @@
         if (a === "openfixguide") { closePops(); return openFixGuide(); }
         if (a === "aimodels" || a === "airefresh") {
           b.disabled = true;
+          try { await autoModels(d.p, true, a === "airefresh"); }
+          finally { b.disabled = false; }
+          return;
+        }
+        if (a === "aipick") {
+          const got = modelsOf(d.p), i = got.indexOf(d.m);
+          if (i >= 0) got.splice(i, 1); else got.push(d.m);
+          return setModels(d.p, got);
+        }
+        if (a === "aibest") {
+          b.disabled = true;
           try {
-            const isRefresh = a === "airefresh";
-            const r = await send(isRefresh ? "/api/ai/registry/refresh" : "/api/ai/models", { provider: $("#ai_provider").value, base_url: $("#ai_base").value, key: $("#ai_key").value, force: isRefresh });
-            $("#ai_models").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
-            toast(r.models.length ? `${isRefresh ? "Refreshed!" : "Found"} ${r.models.length} models for ${$("#ai_provider").value}.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
-            if (r.models.length) $("#ai_model").focus();
+            const st = pick(d.p);
+            if (!st.suggested.length) await autoModels(d.p, false);
+            if (st.suggested.length) { setModels(d.p, st.suggested); toast(`${st.suggested.length} models picked for you, quickest and cheapest first.`, "ok"); }
+            else toast("Nothing to pick from yet. Paste a key and press Find models.", "bad");
           } finally { b.disabled = false; }
           return;
         }
+        if (a === "aiclear") return setModels(d.p, []);
+        if (a === "aiaddkey") {
+          const input = $("#" + d.p + "key"), typed = (input.value || "").trim(), st = pick(d.p);
+          if (!typed) { input.focus(); return toast("Paste a key first.", "bad"); }
+          if (st.added.some(x => x.key === typed)) return toast("That key is already in the list.", "bad");
+          st.added.push({ key: typed, label: "" });
+          input.value = "";
+          aiHints(d.p);
+          toast("Key added to the list. Press Save to keep it.", "ok");
+          return autoModels(d.p);
+        }
+        if (a === "aiunkey") {
+          const st = pick(d.p); if (!st.removed.includes(d.id)) st.removed.push(d.id);
+          aiHints(d.p);
+          return toast("Key taken off the list. Press Save to make it stick.", "ok");
+        }
+        if (a === "aiunnew") { pick(d.p).added.splice(Number(d.i), 1); return aiHints(d.p); }
         if (a === "aisave" || a === "aitest") {
+          const p = d.p, fb = p === "ai_fb_";
           b.disabled = true;
           try {
-            if (a === "aisave") await send("/api/ai", { provider: $("#ai_provider").value, models: $("#ai_model").value, base_url: $("#ai_base").value, key: $("#ai_key").value }, "PUT");
+            if (a === "aisave") {
+              const typed = ($("#" + p + "key").value || "").trim();
+              if (typed) { pick(p).added.push({ key: typed, label: "" }); $("#" + p + "key").value = ""; }
+              await send(fb ? "/api/ai/fallback" : "/api/ai", {
+                provider: $("#" + p + "provider").value, models: $("#" + p + "model").value,
+                base_url: $("#" + p + "base").value, keys: poolOf(p)
+              }, "PUT");
+            }
             let ok = null, why = "";
-            try { ok = await send("/api/ai/test"); } catch (err) { why = err.message; }
+            try { ok = await send(fb ? "/api/ai/fallback/test" : "/api/ai/test"); } catch (err) { why = err.message; }
             S.status = await api("/api/status"); drawShell(); await drawSettings();
-            if (ok) toast(ok.auto_picked ? `Saved! Automatically selected working model "${ok.model}". AI is ready.` : `Saved. ${ok.model} answered, so the AI is ready.`, "ok");
-            else toast(`Saved, but the test failed. ${why}`, "bad");
-          } finally { b.disabled = false; }
-          return;
-        }
-        if (a === "aifbmodels") {
-          b.disabled = true;
-          try {
-            const r = await send("/api/ai/models", { provider: $("#ai_fb_provider").value, base_url: $("#ai_fb_base")?.value || "", key: $("#ai_fb_key")?.value || "" });
-            $("#ai_fb_models").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
-            toast(r.models.length ? `${r.models.length} models found.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
-            if (r.models.length) $("#ai_fb_model").focus();
-          } finally { b.disabled = false; }
-          return;
-        }
-        if (a === "aifbsave" || a === "aifbtest") {
-          b.disabled = true;
-          try {
-            if (a === "aifbsave") await send("/api/ai/fallback", { provider: $("#ai_fb_provider").value, models: $("#ai_fb_model").value, base_url: $("#ai_fb_base")?.value || "", key: $("#ai_fb_key")?.value || "" }, "PUT");
-            let ok = null, why = "";
-            try { ok = await send("/api/ai/fallback/test"); } catch (err) { why = err.message; }
-            S.status = await api("/api/status"); drawShell(); await drawSettings();
-            if (ok) toast(ok.auto_picked ? `Backup saved! Automatically selected working model "${ok.model}". Fallback is ready.` : `Backup saved. ${ok.model} answered, fallback is ready.`, "ok");
-            else toast(`Backup saved, but the test failed. ${why}`, "bad");
+            if (ok) {
+              const bad = (ok.refused || []).length;
+              toast(bad ? `Saved. ${ok.models.length} answered, ${bad} did not: ${ok.refused[0].why}`
+                : `${fb ? "Backup saved" : "Saved"}. ${ok.model} answered, so the AI is ready.`, bad ? "" : "ok");
+            }
+            else toast(`${fb ? "Backup" : "AI"} saved, but the test failed. ${why}`, "bad");
           } finally { b.disabled = false; }
           return;
         }
