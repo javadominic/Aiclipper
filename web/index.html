@@ -6366,7 +6366,11 @@
       const upBar = up && up.latest !== upSeen ? `<div class="vb" role="status">${ic("up")}<span>${up.restart ? "<b>The new version is downloaded.</b> Close Autoclipper and start it again to use it." : `A new version of Autoclipper is out${up.behind ? `: <b>${up.behind} update${up.behind === 1 ? "" : "s"}</b> since yours` : ""}.`}</span>
     <button class="btn sm primary" data-act="updhow">${up.restart ? "What's new" : "How to update"}</button><button class="btn sm ghost" data-act="updlater" aria-label="Hide until the next version">Later</button></div>` : "";
       const toolBar = S.status.no_ffmpeg ? `<div class="vb" role="alert">${ic("warn")}<span><b>Autoclipper can't make clips yet: ffmpeg isn't installed on this computer.</b> Open a terminal, run <code>winget install Gyan.FFmpeg</code> (Mac: <code>brew install ffmpeg-full</code>, Linux: <code>sudo apt install ffmpeg</code>), then close Autoclipper and start it again.</span></div>` : "";
-      const aiBar = !toolBar && S.status.ai?.problem && me?.is_admin && S.view !== "settings" ? `<div class="vb" role="status">${ic("warn")}<span><b>The AI isn't answering.</b> ${esc(S.status.ai.problem)} Until then, clips are picked by loudness.</span><button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">Open AI settings</button></div>` : "";
+      const isFb = S.status.ai?.is_fallback;
+      const aiBar = !toolBar && S.status.ai?.problem && me?.is_admin && S.view !== "settings" ? (
+        isFb ? `<div class="vb" style="background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.35);color:#92400e" role="status">${ic("bolt")}<span><b>Switched to backup AI (${esc(S.status.ai.fallback_provider || "Groq")}):</b> ${esc(S.status.ai.problem)} Clips are continuing to process.</span><button class="btn sm" data-act="go" data-v="settings" data-tab="ai">AI settings</button></div>`
+          : `<div class="vb" role="status">${ic("warn")}<span><b>The AI isn't answering.</b> ${esc(S.status.ai.problem)} Until then, clips are picked by loudness.</span><button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">Open AI settings</button></div>`
+      ) : "";
       const diskBar = !toolBar && S.status.disk_full && S.view !== "settings" ? `<div class="vb" role="alert">${ic("warn")}<span><b>The drive Autoclipper saves to is almost full, so it can't take new videos.</b> Free up space on it, or move Autoclipper's folder to a bigger drive.</span>${me?.is_admin ? `<button class="btn sm primary" data-act="go" data-v="settings" data-tab="storage">Open Storage</button>` : ""}</div>` : "";
       put($("#vbanner"), toolBar ? toolBar : diskBar ? diskBar : aiBar ? aiBar : upBar ? upBar : me && me.verified === false ? `<div class="vb" role="status">${ic("warn")}<span>Confirm your email to start clipping. We sent a link to <b>${esc(me.email)}</b>.</span><button class="btn sm" data-act="resendverify">Send a new link</button></div>`
         : kk && kk.ready === false && S.view !== "usage" ? `<div class="vb" role="status">${ic("bolt")}<span>${me?.is_admin ? "Add your AI key to let the AI pick clips and write titles. Until then, clips are picked by loudness." : "The AI isn't set up on this server yet, so clips are picked by loudness."}</span>${me?.is_admin && S.view !== "settings" ? `<button class="btn sm primary" data-act="go" data-v="settings" data-tab="ai">${ic("plus")}Add AI key</button>` : ""}</div>` : "");
@@ -7096,6 +7100,15 @@
       $("#ai_base").placeholder = pv.address || "http://127.0.0.1:1234/v1";
       $("#ai_basewrap").hidden = pv.id !== "custom" && !(same && k.base_url);
     }
+    function aiFbHints() {
+      const k = S.ai, sel = $("#ai_fb_provider"); if (!k || !sel) return;
+      const pv = k.providers.find(x => x.id === sel.value) || k.providers[0], same = pv.id === k.fallback_provider;
+      if ($("#ai_fb_key")) $("#ai_fb_key").placeholder = same && k.fallback_has_key ? `Saved${k.fallback_key_hint ? ", ends in " + k.fallback_key_hint : ""}. Paste a new key to replace it` : pv.needs_key ? "Paste your key" : "Not needed";
+      if ($("#ai_fb_keyhint")) $("#ai_fb_keyhint").innerHTML = pv.key_url ? `${pv.needs_key ? "Get a key at" : "Set it up at"} <a href="${esc(pv.key_url)}" target="_blank" rel="noopener">${esc(pv.key_url.replace("https://", ""))}</a>. Stored securely on this server.` : "";
+      if ($("#ai_fb_model")) $("#ai_fb_model").placeholder = pv.example ? "For example " + pv.example : "The model id";
+      if ($("#ai_fb_base")) $("#ai_fb_base").placeholder = pv.address || "http://127.0.0.1:1234/v1";
+      if ($("#ai_fb_basewrap")) $("#ai_fb_basewrap").hidden = pv.id !== "custom" && !(same && k.fallback_base_url);
+    }
     async function drawSettings() {
       const box = $("#sform"); if (!box) return;
       const tab = S.stab || setTabs()[0][0], me = S.status.user;
@@ -7106,17 +7119,29 @@
       try {
         if (tab === "ai") {
           const k = S.ai = await api("/api/ai");
-          body.innerHTML = `<section class="set-sec"><h2>AI</h2><p class="help">Autoclipper uses an AI model to pick the moments worth clipping and to write hooks, titles and captions. Use your own key from any of these services. You pay that service directly. Without a key, clips are picked by loudness.</p>
+          body.innerHTML = `<section class="set-sec"><h2>Primary AI</h2><p class="help">Autoclipper uses an AI model to pick the moments worth clipping and to write hooks, titles and captions. Use your own key from any of these services.</p>
           <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${esc(k.models[0] || "")}</span>` : `<span class="pill warn">Not set up</span><span class="sub">Choose a service, paste your key and pick a model.</span>`}</div>
           <div class="ai-form">
             <label class="f">AI service<select id="ai_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === k.provider ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
             <label class="f">Key<input id="ai_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_keyhint"></span></label>
             <label class="f" id="ai_basewrap">Address<input id="ai_base" value="${esc(k.base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for a custom service.</span></label>
             <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button></span>
-              <datalist id="ai_models"></datalist><span class="hint">A fast, inexpensive model is the right choice. Add a second one after a comma to fall back on.</span></label>
+              <datalist id="ai_models"></datalist><span class="hint">A fast, inexpensive model is the right choice.</span></label>
           </div>
-          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>`;
+          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>
+
+          <section class="set-sec" style="margin-top:28px"><h2>Backup AI (Automatic Fallback)</h2><p class="help">When your primary AI service hits its rate limit or runs out of credits, Autoclipper automatically and instantly switches to this backup service so your clips never stop processing.</p>
+          <div class="ai-state">${k.fallback_ready ? `<span class="pill ok">${ic("bolt")}Backup Active</span><span class="sub">${esc(k.fallback_label || "Groq")} · ${esc((k.fallback_models || [])[0] || "")}</span>` : `<span class="pill warn">No backup configured</span><span class="sub">Add a backup service (e.g. Groq) to prevent interruptions when rate limits hit.</span>`}</div>
+          <div class="ai-form">
+            <label class="f">Backup service<select id="ai_fb_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === (k.fallback_provider || "groq") ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
+            <label class="f">Backup Key<input id="ai_fb_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_fb_keyhint"></span></label>
+            <label class="f" id="ai_fb_basewrap" hidden>Address<input id="ai_fb_base" value="${esc(k.fallback_base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for custom.</span></label>
+            <label class="f">Backup Model<span class="with"><input id="ai_fb_model" list="ai_fb_models" value="${esc((k.fallback_models || ["llama-3.3-70b-versatile"]).join(", "))}" spellcheck="false"><button class="btn" type="button" data-act="aifbmodels">Find models</button></span>
+              <datalist id="ai_fb_models"></datalist><span class="hint">Recommended for fallback: Groq (llama-3.3-70b-versatile). Fast and free.</span></label>
+          </div>
+          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aifbsave">Save backup</button>${k.fallback_ready ? `<button class="btn" data-act="aifbtest">Test backup</button><button class="btn ghost" data-act="aifbremove">Remove backup</button>` : ""}</div></section>`;
           aiHints();
+          aiFbHints();
         }
         if (tab === "profile") {
           const joined = me.created_at ? new Date(me.created_at * 1000).toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" }) : "";
@@ -7371,6 +7396,7 @@
     document.addEventListener("change", async e => {
       const t = e.target;
       if (t.id === "ai_provider") { $("#ai_models").innerHTML = ""; if (S.ai && t.value !== S.ai.provider) { $("#ai_model").value = ""; $("#ai_base").value = ""; } return aiHints(); }
+      if (t.id === "ai_fb_provider") { $("#ai_fb_models").innerHTML = ""; if (S.ai && t.value !== S.ai.fallback_provider) { $("#ai_fb_model").value = ""; $("#ai_fb_base").value = ""; } return aiFbHints(); }
       if (t.dataset.sel) {
         const k = t.dataset.sel;
         if (t.checked) sel().add(k); else sel().delete(k);
@@ -7418,6 +7444,37 @@
             S.status = await api("/api/status"); drawShell(); await drawSettings();
             if (ok) toast(`Saved. ${ok.model} answered, so the AI is ready.`, "ok");
             else toast(`Saved, but the test failed. ${why}`, "bad");
+          } finally { b.disabled = false; }
+          return;
+        }
+        if (a === "aifbmodels") {
+          b.disabled = true;
+          try {
+            const r = await send("/api/ai/models", { provider: $("#ai_fb_provider").value, base_url: $("#ai_fb_base")?.value || "", key: $("#ai_fb_key")?.value || "" });
+            $("#ai_fb_models").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
+            toast(r.models.length ? `${r.models.length} models found.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
+            if (r.models.length) $("#ai_fb_model").focus();
+          } finally { b.disabled = false; }
+          return;
+        }
+        if (a === "aifbsave" || a === "aifbtest") {
+          b.disabled = true;
+          try {
+            if (a === "aifbsave") await send("/api/ai/fallback", { provider: $("#ai_fb_provider").value, models: $("#ai_fb_model").value, base_url: $("#ai_fb_base")?.value || "", key: $("#ai_fb_key")?.value || "" }, "PUT");
+            let ok = null, why = "";
+            try { ok = await send("/api/ai/fallback/test"); } catch (err) { why = err.message; }
+            S.status = await api("/api/status"); drawShell(); await drawSettings();
+            if (ok) toast(`Backup saved. ${ok.model} answered, fallback is ready.`, "ok");
+            else toast(`Backup saved, but the test failed. ${why}`, "bad");
+          } finally { b.disabled = false; }
+          return;
+        }
+        if (a === "aifbremove") {
+          b.disabled = true;
+          try {
+            await send("/api/ai/fallback", {}, "DELETE");
+            S.status = await api("/api/status"); drawShell(); await drawSettings();
+            toast("Backup service removed.", "ok");
           } finally { b.disabled = false; }
           return;
         }

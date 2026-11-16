@@ -164,14 +164,23 @@ def loud_zscore(db):
     return (db - np.median(db)) / (db.std() + 1e-6)
 
 
+def _is_rate_limit(err: Exception) -> bool:
+    s = str(err).lower()
+    return ("429" in s or "quota" in s or "rate limit" in s or "rate_limit" in s
+            or "exhausted" in s or "too many requests" in s or "credit" in s)
+
+
 def ask_ai(prompt, schema=None, purpose="AI call"):
-    """Try each model in order, with a couple of retries for rate limits and overloads.
-    Returns (the answer, the model that gave it, tokens used) and notes the tokens in the usage record."""
+    """Try each primary model in order. If rate-limited or exhausted, immediately switch to the
+    fallback AI provider if configured. Returns (the answer, model, tokens used)."""
     if not config.ai_ready():
         raise RuntimeError("The AI is not set up on this server.")
     last = None
+    hit_rate_limit = False
+
+    # 1. Try primary models
     for model in ai.models():
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 out, sent, wrote = ai.call(model, prompt, schema or SCHEMA)
                 usage.record(sent, wrote, purpose)
@@ -179,11 +188,30 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
                 return out, model, sent + wrote
             except Exception as e:  # noqa: BLE001
                 last = e
+                if _is_rate_limit(e):
+                    hit_rate_limit = True
+                    break  # don't wait or retry on this model; switch immediately
                 err_str = str(e).lower()
-                if "http 429" in err_str or "http 5" in err_str or "timed out" in err_str or "timeout" in err_str:
-                    time.sleep(4 * (attempt + 1))
+                if "http 5" in err_str or "timed out" in err_str or "timeout" in err_str:
+                    time.sleep(2 * (attempt + 1))
                     continue
                 break
+        if hit_rate_limit:
+            break
+
+    # 2. Switch instantly to fallback provider if configured and primary failed / hit rate limit
+    if (hit_rate_limit or last) and ai.fallback_ready():
+        fb_provider_label = ai.fallback_label()
+        for fb_model in ai.fallback_models():
+            try:
+                out, sent, wrote = ai.call_fallback(fb_model, prompt, schema or SCHEMA)
+                usage.record(sent, wrote, f"{purpose} ({fb_provider_label})")
+                ai.note_fallback(ai.label(), fb_provider_label, str(last))
+                return out, f"{fb_model} ({fb_provider_label})", sent + wrote
+            except Exception as fb_err:  # noqa: BLE001
+                last = fb_err
+                continue
+
     ai.note_problem(last)
     raise RuntimeError(f"The AI did not answer: {ai.explain(last) or last}")
 

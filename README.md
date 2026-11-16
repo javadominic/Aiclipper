@@ -28,6 +28,7 @@ Simply paste any **YouTube**, **Twitch**, or **Kick** video link (or upload an M
 - **Multi-Creator Workspaces:** Manage multiple streamers and channels with independent settings, custom caption presets, and social post queues.
 - **On-Device Speech-to-Text:** Uses `sherpa-onnx` and FastConformer/Parakeet models running locally. Fast, private, and zero third-party transcription fees.
 - **Customizable AI Brain:** Plug in free Google Gemini Flash, OpenAI GPT-4o-mini, Groq Llama-3, Claude 3.5 Sonnet, or run 100% offline with Ollama.
+- **Zero-Downtime AI Auto-Fallback:** Set a backup provider (e.g. Groq) alongside your primary AI (e.g. Gemini). When rate limits or quota caps hit, Autoclipper switches instantly without interrupting your clips.
 - **Dynamic Animated Subtitles:** Word-level highlighted captions in popular styles (Bilingual, MrBeast/Hormozi style, clean minimal) powered by `ffmpeg-full` and `libass`.
 - **Direct Multi-Platform Publishing:** Built-in OAuth integration to upload directly to YouTube Shorts, Instagram Reels, and TikTok.
 - **Zero Lock-In & Self-Hosted:** No subscription fees, no watermarks, no limits on video duration or clip quantities.
@@ -126,6 +127,28 @@ AUTOCLIPPER_AI_KEY=your_gemini_api_key_here
 | **OpenRouter** | `AUTOCLIPPER_AI_PROVIDER=openrouter` | [OpenRouter Keys](https://openrouter.ai/keys) |
 | **Ollama (100% Offline)**| `AUTOCLIPPER_AI_PROVIDER=ollama` | [Ollama](https://ollama.com/) |
 
+### 🔄 Zero-Downtime Automatic AI Fallback
+
+Never let free-tier rate limits or quota exhaustion stop your video clipping pipeline. Autoclipper supports **dual-provider auto-failover**:
+
+1. In **Settings → AI**, configure your **Primary AI** (e.g., Google Gemini Flash).
+2. Right below it, configure your **Backup AI** (e.g., Groq `llama-3.3-70b-versatile`).
+3. If your primary provider hits an HTTP 429, rate limit, or credit exhaustion, Autoclipper **switches instantly to the backup model** without dropping clips or falling back to loudness only.
+4. An informative notice will display in the studio topbar confirming that backup AI seamlessly took over.
+
+You can also define your fallback directly in your `.env` file:
+```ini
+# Primary AI
+AUTOCLIPPER_AI_PROVIDER=gemini
+AUTOCLIPPER_AI_MODELS=gemini-3-flash-preview,gemini-2.5-flash
+AUTOCLIPPER_AI_KEY=your_gemini_key
+
+# Backup AI (Automatic Fallback)
+AUTOCLIPPER_AI_FALLBACK_PROVIDER=groq
+AUTOCLIPPER_AI_FALLBACK_MODELS=llama-3.3-70b-versatile
+AUTOCLIPPER_AI_FALLBACK_KEY=your_groq_key
+```
+
 ---
 
 ## 🎬 How to Clip Videos & Streams
@@ -174,7 +197,7 @@ To connect YouTube Shorts:
 
 - **Autoclipper** is a modified and enhanced fork of the open-source **[PeakCut](https://github.com/haziqahmedqasmi/PeakCut)** project by Haziq Ahmed Qasmi.
 - Distributed under the terms of the [MIT License](LICENSE). Sincere gratitude to the original creator and open-source contributors.
-- Enhancements in this edition include redesigned Electric Emerald UI/UX, streamlined sidebar settings navigation, built-in interactive OAuth/FFmpeg troubleshooting guide, in-progress clip cancellation, and refreshed vector branding assets.
+- Enhancements in this edition include redesigned Electric Emerald UI/UX, dual-provider automatic AI rate-limit fallback (e.g. Gemini → Groq), streamlined sidebar settings navigation, built-in interactive OAuth/FFmpeg troubleshooting guide, in-progress clip cancellation, and refreshed vector branding assets.
 
 ---
 

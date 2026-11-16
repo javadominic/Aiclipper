@@ -62,7 +62,10 @@ def brief() -> dict:
             u.user_id == uid, u.t >= midnight)).first()
     out = {"ready": ai.ready(), "provider": ai.label(), "model": (ai.models() or [""])[0],
            "today_calls": int(today[0]), "today_tokens": int(today[1]),
-           "problem": ai.problem["text"] if ai.problem["text"] and now - ai.problem["at"] < 6 * 3600 else ""}
+           "problem": ai.problem["text"] if ai.problem["text"] and now - ai.problem["at"] < 6 * 3600 else "",
+           "is_fallback": bool(ai.problem.get("is_fallback")),
+           "fallback_provider": ai.problem.get("fallback_provider", "") if ai.problem.get("is_fallback") else "",
+           "fallback_ready": ai.fallback_ready()}
     _brief[uid] = (now, out)
     return dict(out)
 

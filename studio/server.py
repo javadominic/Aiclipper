@@ -1296,6 +1296,41 @@ def ai_test(request: Request):
         raise HTTPException(502, ai.explain(e) or "The AI did not answer: " + _ai_error(e))
 
 
+@app.put("/api/ai/fallback")
+def ai_fallback_put(request: Request, body: dict = Body(...)):
+    _admin(request)
+    k = body.get("key")
+    try:
+        out = ai.save_fallback(body.get("provider"), body.get("models"), body.get("base_url") or "",
+                               None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    usage.forget_all()
+    ctx.bump()
+    return out
+
+
+@app.delete("/api/ai/fallback")
+def ai_fallback_delete(request: Request):
+    _admin(request)
+    out = ai.remove_fallback()
+    usage.forget_all()
+    ctx.bump()
+    return out
+
+
+@app.post("/api/ai/fallback/test")
+def ai_fallback_test(request: Request):
+    _admin(request)
+    _throttle("aitest:" + ctx.uid(), 20, 600)
+    try:
+        return ai.test_fallback()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, ai.explain(e) or "The fallback AI did not answer: " + _ai_error(e))
+
+
 # ================================================================ posting, accounts, settings
 @app.get("/api/overview")
 def overview():
