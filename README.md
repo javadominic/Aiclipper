@@ -108,7 +108,7 @@ Autoclipper works with any JSON-capable LLM to scout the best moments and genera
 ### Recommended: Google Gemini (Free & High Speed)
 1. Get a free API key at [Google AI Studio](https://aistudio.google.com/apikey).
 2. Open Autoclipper at `http://127.0.0.1:8765` → Click **AI Engine** in the sidebar.
-3. Select **Google Gemini**, set the model to `gemini-3-flash-preview` (or `gemini-2.5-flash`), paste your API key, and click **Save and test**.
+3. Select **Google Gemini**, set the model to `gemini-2.0-flash` (or leave blank to auto-detect), paste your API key, and click **Save and test**.
 
 Alternatively, configure your keys directly in your `.env` file:
 ```ini
@@ -140,7 +140,7 @@ You can also define your fallback directly in your `.env` file:
 ```ini
 # Primary AI
 AUTOCLIPPER_AI_PROVIDER=gemini
-AUTOCLIPPER_AI_MODELS=gemini-3-flash-preview,gemini-2.5-flash
+AUTOCLIPPER_AI_MODELS=gemini-2.0-flash,gemini-1.5-flash
 AUTOCLIPPER_AI_KEY=your_gemini_key
 
 # Backup AI (Automatic Fallback)

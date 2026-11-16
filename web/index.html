@@ -2700,16 +2700,35 @@
     }
 
     .tile-o[aria-pressed=true] {
-      background: var(--brand-soft);
-      color: var(--brand-ink);
-      border-color: var(--brand);
-      box-shadow: 0 0 0 1px var(--brand), 0 4px 12px rgba(16, 185, 129, 0.2);
+      background: var(--brand-soft) !important;
+      color: var(--brand-deep) !important;
+      font-weight: 700 !important;
+      border-color: var(--brand) !important;
+      box-shadow: 0 0 0 2px var(--brand), 0 4px 12px rgba(16, 185, 129, 0.25) !important;
+    }
+
+    .tile-o[aria-pressed=true]::after {
+      content: "✓";
+      position: absolute;
+      top: -5px;
+      right: -5px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 18px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+      z-index: 3;
     }
 
     .tile-o[aria-pressed=true] .cap-prev,
     .tile-o[aria-pressed=true] .lay-prev {
-      outline: 2px solid var(--brand);
-      outline-offset: 2px;
+      box-shadow: 0 0 0 2px var(--brand);
+      border-radius: 6px;
     }
 
     .cap-prev {
@@ -7139,8 +7158,8 @@
             <label class="f">AI service<select id="ai_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === k.provider ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
             <label class="f">Key<input id="ai_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_keyhint"></span></label>
             <label class="f" id="ai_basewrap">Address<input id="ai_base" value="${esc(k.base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for a custom service.</span></label>
-            <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button></span>
-              <datalist id="ai_models"></datalist><span class="hint">A fast, inexpensive model is the right choice.</span></label>
+            <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button></span>
+              <datalist id="ai_models"></datalist><span class="hint">A fast model is recommended (e.g. gemini-2.0-flash). Leave blank to auto-detect.</span></label>
           </div>
           <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>
 
@@ -7150,8 +7169,8 @@
             <label class="f">Backup service<select id="ai_fb_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === (k.fallback_provider || "groq") ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
             <label class="f">Backup Key<input id="ai_fb_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_fb_keyhint"></span></label>
             <label class="f" id="ai_fb_basewrap" hidden>Address<input id="ai_fb_base" value="${esc(k.fallback_base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for custom.</span></label>
-            <label class="f">Backup Model<span class="with"><input id="ai_fb_model" list="ai_fb_models" value="${esc((k.fallback_models || ["llama-3.3-70b-versatile"]).join(", "))}" spellcheck="false"><button class="btn" type="button" data-act="aifbmodels">Find models</button></span>
-              <datalist id="ai_fb_models"></datalist><span class="hint">Recommended for fallback: Groq (llama-3.3-70b-versatile). Fast and free.</span></label>
+            <label class="f">Backup Model<span class="with"><input id="ai_fb_model" list="ai_fb_models" value="${esc((k.fallback_models || ["llama-3.1-8b-instant"]).join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aifbmodels">Find models</button></span>
+              <datalist id="ai_fb_models"></datalist><span class="hint">Recommended for fallback: Groq (llama-3.1-8b-instant). Fast and free.</span></label>
           </div>
           <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aifbsave">Save backup</button>${k.fallback_ready ? `<button class="btn" data-act="aifbtest">Test backup</button><button class="btn ghost" data-act="aifbremove">Remove backup</button>` : ""}</div></section>`;
           aiHints();
@@ -7468,7 +7487,7 @@
             let ok = null, why = "";
             try { ok = await send("/api/ai/test"); } catch (err) { why = err.message; }
             S.status = await api("/api/status"); drawShell(); await drawSettings();
-            if (ok) toast(`Saved. ${ok.model} answered, so the AI is ready.`, "ok");
+            if (ok) toast(ok.auto_picked ? `Saved! Automatically selected working model "${ok.model}". AI is ready.` : `Saved. ${ok.model} answered, so the AI is ready.`, "ok");
             else toast(`Saved, but the test failed. ${why}`, "bad");
           } finally { b.disabled = false; }
           return;
@@ -7490,7 +7509,7 @@
             let ok = null, why = "";
             try { ok = await send("/api/ai/fallback/test"); } catch (err) { why = err.message; }
             S.status = await api("/api/status"); drawShell(); await drawSettings();
-            if (ok) toast(`Backup saved. ${ok.model} answered, fallback is ready.`, "ok");
+            if (ok) toast(ok.auto_picked ? `Backup saved! Automatically selected working model "${ok.model}". Fallback is ready.` : `Backup saved. ${ok.model} answered, fallback is ready.`, "ok");
             else toast(`Backup saved, but the test failed. ${why}`, "bad");
           } finally { b.disabled = false; }
           return;

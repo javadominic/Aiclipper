@@ -178,8 +178,13 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
     last = None
     hit_rate_limit = False
 
-    # 1. Try primary models
-    for model in ai.models():
+    # 1. Try primary models (including candidate backups for this provider)
+    models_to_try = list(ai.models())
+    for c in ai.PROVIDER_CANDIDATES.get(ai.provider(), []):
+        if c not in models_to_try:
+            models_to_try.append(c)
+
+    for model in models_to_try:
         for attempt in range(2):
             try:
                 out, sent, wrote = ai.call(model, prompt, schema or SCHEMA)
@@ -192,6 +197,8 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
                     hit_rate_limit = True
                     break  # don't wait or retry on this model; switch immediately
                 err_str = str(e).lower()
+                if "404" in err_str or "not found" in err_str or "does not exist" in err_str or "unknown model" in err_str:
+                    break  # model not recognized; try next candidate
                 if "http 5" in err_str or "timed out" in err_str or "timeout" in err_str:
                     time.sleep(2 * (attempt + 1))
                     continue
@@ -201,8 +208,14 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
 
     # 2. Switch instantly to fallback provider if configured and primary failed / hit rate limit
     if (hit_rate_limit or last) and ai.fallback_ready():
+        fb = ai.fallback()
         fb_provider_label = ai.fallback_label()
-        for fb_model in ai.fallback_models():
+        fb_models_to_try = list(ai.fallback_models())
+        for c in ai.PROVIDER_CANDIDATES.get(fb.get("provider", ""), []):
+            if c not in fb_models_to_try:
+                fb_models_to_try.append(c)
+
+        for fb_model in fb_models_to_try:
             try:
                 out, sent, wrote = ai.call_fallback(fb_model, prompt, schema or SCHEMA)
                 usage.record(sent, wrote, f"{purpose} ({fb_provider_label})")

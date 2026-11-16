@@ -22,17 +22,28 @@ from . import config
 
 # name -> (label shown on the pages, address, how it is spoken to, where to get a key, an example model id)
 PROVIDERS = {
-    "gemini": ("Gemini", "https://generativelanguage.googleapis.com/v1beta/models", "gemini", "https://aistudio.google.com/apikey", "gemini-2.5-flash"),
+    "gemini": ("Gemini", "https://generativelanguage.googleapis.com/v1beta/models", "gemini", "https://aistudio.google.com/apikey", "gemini-2.0-flash"),
     "openai": ("OpenAI", "https://api.openai.com/v1", "openai", "https://platform.openai.com/api-keys", "gpt-4o-mini"),
     "xai": ("Grok", "https://api.x.ai/v1", "openai", "https://console.x.ai", "grok-4"),
-    "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "llama-3.3-70b-versatile"),
-    "openrouter": ("OpenRouter", "https://openrouter.ai/api/v1", "openai", "https://openrouter.ai/keys", "google/gemini-2.5-flash"),
-    "anthropic": ("Claude", "https://api.anthropic.com/v1", "anthropic", "https://console.anthropic.com", ""),
+    "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "llama-3.1-8b-instant"),
+    "openrouter": ("OpenRouter", "https://openrouter.ai/api/v1", "openai", "https://openrouter.ai/keys", "google/gemini-2.0-flash-001"),
+    "anthropic": ("Claude", "https://api.anthropic.com/v1", "anthropic", "https://console.anthropic.com", "claude-3-5-haiku-20241022"),
     "ollama": ("Ollama (on this machine)", "http://127.0.0.1:11434/v1", "openai", "https://ollama.com", "llama3.1"),
     "custom": ("Custom (OpenAI-compatible)", "", "openai", "", ""),
 }
 ALIASES = {"google": "gemini", "grok": "xai", "claude": "anthropic", "local": "ollama"}
 NO_KEY = {"ollama", "custom"}       # a model running on your own machine needs no key
+
+# Known working models in priority order for each provider, tried automatically if needed
+PROVIDER_CANDIDATES = {
+    "gemini": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro"],
+    "groq": ["llama-3.1-8b-instant", "openai/gpt-oss-120b", "deepseek-r1-distill-llama-70b", "llama-3.3-70b-versatile"],
+    "openai": ["gpt-4o-mini", "gpt-4o"],
+    "xai": ["grok-2", "grok-beta"],
+    "anthropic": ["claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022"],
+    "ollama": ["llama3.1", "mistral"],
+    "openrouter": ["google/gemini-2.0-flash-001", "meta-llama/llama-3.1-8b-instruct"],
+}
 
 # ---------------------------------------------------------------- the settings in use
 _lock = threading.Lock()
@@ -127,8 +138,8 @@ def save(provider_id: str, model_ids, address: str = "", new_key=None) -> dict:
     if isinstance(model_ids, str):
         model_ids = model_ids.split(",")
     ms = [str(m).strip()[:120] for m in (model_ids or []) if str(m).strip()][:5]
-    if not ms:
-        raise ValueError("Enter the model to use.")
+    if not ms or ms == [""] or ms == ["auto"]:
+        ms = list(PROVIDER_CANDIDATES.get(p, [PROVIDERS[p][4]]))
     if any(not re.fullmatch(r"[\w.\-:/@]+", m) for m in ms):
         raise ValueError("A model id has letters, digits and . - : / only.")
     address = str(address or "").strip().rstrip("/")[:300]
@@ -209,8 +220,8 @@ def save_fallback(provider_id: str, model_ids, address: str = "", new_key=None) 
     if isinstance(model_ids, str):
         model_ids = model_ids.split(",")
     ms = [str(m).strip()[:120] for m in (model_ids or []) if str(m).strip()][:5]
-    if not ms:
-        raise ValueError("Enter the model to use.")
+    if not ms or ms == [""] or ms == ["auto"]:
+        ms = list(PROVIDER_CANDIDATES.get(p, [PROVIDERS[p][4]]))
     if any(not re.fullmatch(r"[\w.\-:/@]+", m) for m in ms):
         raise ValueError("A model id has letters, digits and . - : / only.")
     address = str(address or "").strip().rstrip("/")[:300]
@@ -303,14 +314,88 @@ def call_fallback(model: str, prompt: str, schema: dict):
     return _call_as(fb["provider"], model, url, fb.get("key", ""), prompt, schema)
 
 
+def find_working_model(prov: str, url: str = "", k: str = "", preferred: list = None) -> list:
+    """Find the best working chat model for this provider and key automatically.
+    Tries candidate models until one succeeds, and queries list_models if candidates fail.
+    Returns a list of working models with the verified working model first."""
+    p = ALIASES.get(str(prov or "").strip().lower(), str(prov or "").strip().lower())
+    base = url or PROVIDERS.get(p, ("", ""))[1]
+    candidates = []
+    if preferred:
+        candidates.extend([str(m).strip() for m in preferred if str(m).strip()])
+    for m in PROVIDER_CANDIDATES.get(p, []):
+        if m not in candidates:
+            candidates.append(m)
+
+    last_err = None
+    working = []
+    for mdl in candidates:
+        try:
+            out, sent, wrote = _call_as(p, mdl, base, k, 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
+            working.append(mdl)
+            break
+        except Exception as e:
+            last_err = e
+            low = str(e).lower()
+            if "401" in low or "403" in low or "api key" in low or "unauthorized" in low or "permission" in low or "quota" in low or "429" in low:
+                raise
+            continue
+
+    if working:
+        for c in candidates:
+            if c not in working:
+                working.append(c)
+        return working[:5]
+
+    try:
+        remote = list_models(p, base, k)
+        for mdl in remote[:5]:
+            if mdl in candidates:
+                continue
+            try:
+                out, sent, wrote = _call_as(p, mdl, base, k, 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
+                working.append(mdl)
+                break
+            except Exception as e:
+                last_err = e
+                continue
+    except Exception as e:
+        if not last_err:
+            last_err = e
+
+    if working:
+        return working
+
+    if last_err:
+        raise last_err
+    return list(candidates[:5])
+
+
 def test_fallback() -> dict:
-    """One tiny request with the fallback settings, to verify fallback works."""
+    """One tiny request with the fallback settings, to verify fallback works.
+    If the saved model returns 404/not found, automatically discovers and saves a working fallback model."""
     if not fallback_ready():
         raise ValueError("Save a fallback service, model and key first.")
     fb = fallback()
-    m = (fb.get("models") or [""])[0]
-    out, sent, wrote = call_fallback(m, 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
-    return {"ok": True, "provider": fb["provider"], "model": m, "tokens": sent + wrote, "answer": str(out)[:80]}
+    p = fb["provider"]
+    ms = fb.get("models") or [""]
+    m = ms[0]
+    try:
+        out, sent, wrote = call_fallback(m, 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
+        return {"ok": True, "provider": fb["provider"], "model": m, "tokens": sent + wrote, "answer": str(out)[:80]}
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "404" in err_msg or "not found" in err_msg or "does not exist" in err_msg or "unknown model" in err_msg:
+            try:
+                url = fb.get("base_url") or PROVIDERS.get(p, ("", ""))[1]
+                working = find_working_model(p, url, fb.get("key", ""))
+                if working:
+                    save_fallback(p, working, fb.get("base_url", ""), fb.get("key", ""))
+                    out, sent, wrote = call_fallback(working[0], 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
+                    return {"ok": True, "provider": p, "model": working[0], "auto_picked": True, "tokens": sent + wrote, "answer": str(out)[:80]}
+            except Exception:
+                pass
+        raise
 
 
 def list_models(provider_id=None, address=None, with_key=None) -> list:
@@ -347,13 +432,29 @@ def list_models(provider_id=None, address=None, with_key=None) -> list:
 
 
 def test() -> dict:
-    """One tiny request with the settings in use, to prove the key, the address and the model all work."""
+    """One tiny request with the settings in use, to prove the key, the address and the model all work.
+    If the saved model returns 404/not found, automatically discovers and saves a working model."""
     ms = models()
+    p = provider()
     if not ready():
         raise ValueError("Save a service, a model and a key first.")
-    out, sent, wrote = call(ms[0], 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
-    clear_problem()
-    return {"ok": True, "model": ms[0], "tokens": sent + wrote, "answer": str(out)[:80]}
+    try:
+        out, sent, wrote = call(ms[0], 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
+        clear_problem()
+        return {"ok": True, "model": ms[0], "tokens": sent + wrote, "answer": str(out)[:80]}
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "404" in err_msg or "not found" in err_msg or "does not exist" in err_msg or "unknown model" in err_msg:
+            try:
+                working = find_working_model(p, base_url(), key())
+                if working:
+                    save(p, working, base_url(), key())
+                    out, sent, wrote = call(working[0], 'Answer with a JSON array that holds the single string "ok".', {"type": "ARRAY", "items": {"type": "STRING"}})
+                    clear_problem()
+                    return {"ok": True, "model": working[0], "auto_picked": True, "tokens": sent + wrote, "answer": str(out)[:80]}
+            except Exception:
+                pass
+        raise
 
 
 class AIError(RuntimeError):
