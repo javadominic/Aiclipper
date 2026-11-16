@@ -337,8 +337,13 @@ def list_models(provider_id=None, address=None, with_key=None) -> list:
         found = [m.get("name", "").split("/")[-1] for m in data.get("models", [])
                  if "generateContent" in (m.get("supportedGenerationMethods") or [])]
     else:
-        found = [m.get("id", "") for m in data.get("data", []) if isinstance(m, dict)]
-    return sorted({m for m in found if m})[:400]
+        found = [m.get("id", "") for m in data.get("data", []) if isinstance(m, dict) and "whisper" not in m.get("id", "").lower()]
+    models_list = sorted({m for m in found if m})
+    preferred = PROVIDERS[p][4]
+    if preferred in models_list:
+        models_list.remove(preferred)
+        return [preferred] + models_list[:399]
+    return models_list[:400]
 
 
 def test() -> dict:
@@ -358,24 +363,26 @@ class AIError(RuntimeError):
 problem = {"text": "", "at": 0.0, "is_fallback": False, "fallback_provider": ""}       # why the AI last failed, for the dashboard; cleared when it answers again
 
 
-def explain(e) -> str:
+def explain(e, prov=None, mdl=None) -> str:
     """What went wrong with an AI call, in words the owner can act on."""
     text, low = str(e), str(e).lower()
-    name = (models() or ["?"])[0]
+    p_id = prov or provider()
+    p_label = PROVIDERS.get(p_id, ("",))[0] or p_id.title()
+    name = mdl or ((fallback_models() if prov == (fallback().get("provider")) else models()) or ["?"])[0]
     if "404" in text or "not found" in low or "does not exist" in low or "unknown model" in low or "not_found" in low:
-        return f"{label()} doesn't know the model \"{name}\". Open Settings, AI, press Find models and pick one from the list."
+        return f"{p_label} doesn't know the model \"{name}\". Check the model name in Settings, AI."
     if "401" in text or "403" in text or "api key" in low or "api_key" in low or "unauthorized" in low or "permission" in low:
-        return f"{label()} refused the key. Paste a working key under Settings, AI."
+        return f"{p_label} refused the key. Check your {p_label} API key under Settings, AI."
     if "429" in text or "quota" in low or "rate limit" in low or "exhausted" in low:
-        return f"{label()} says the key has hit its limit or has no credit left. Check the account with {label()}, or try again later."
+        return f"{p_label} says the key has hit its limit or has no credit left. Check the account with {p_label}, or try again later."
     if "connect" in low or "timed out" in low or "timeout" in low or "getaddrinfo" in low or "refused" in low:
-        return f"Autoclipper couldn't reach {label()}. Check the internet connection" + (" and that Ollama is running." if provider() == "ollama" else ".")
-    return ""
+        return f"Autoclipper couldn't reach {p_label}. Check the internet connection" + (" and that Ollama is running." if p_id == "ollama" else ".")
+    return f"{p_label}: {text[:160]}"
 
 
-def note_problem(e):
+def note_problem(e, prov=None, mdl=None):
     import time
-    why = explain(e)
+    why = explain(e, prov=prov, mdl=mdl)
     if why:
         problem.update(text=why, at=time.time(), is_fallback=False, fallback_provider="")
 

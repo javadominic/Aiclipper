@@ -1323,12 +1323,15 @@ def ai_fallback_delete(request: Request):
 def ai_fallback_test(request: Request):
     _admin(request)
     _throttle("aitest:" + ctx.uid(), 20, 600)
+    fb = ai.fallback()
+    prov = fb.get("provider", "groq")
+    mdl = (fb.get("models") or [""])[0]
     try:
         return ai.test_fallback()
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, ai.explain(e) or "The fallback AI did not answer: " + _ai_error(e))
+        raise HTTPException(502, ai.explain(e, prov=prov, mdl=mdl) or "The fallback AI did not answer: " + _ai_error(e))
 
 
 # ================================================================ posting, accounts, settings
