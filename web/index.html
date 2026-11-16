@@ -7158,8 +7158,8 @@
             <label class="f">AI service<select id="ai_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === k.provider ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
             <label class="f">Key<input id="ai_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_keyhint"></span></label>
             <label class="f" id="ai_basewrap">Address<input id="ai_base" value="${esc(k.base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for a custom service.</span></label>
-            <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button></span>
-              <datalist id="ai_models"></datalist><span class="hint">A fast model is recommended (e.g. gemini-2.0-flash). Leave blank to auto-detect.</span></label>
+            <label class="f">Model<span class="with"><input id="ai_model" list="ai_models" value="${esc(k.models.join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aimodels">Find models</button><button class="btn ghost" type="button" data-act="airefresh" title="Bypass cache and query provider API directly">Refresh</button></span>
+              <datalist id="ai_models"></datalist><span class="hint">A fast model is recommended (e.g. gemini-2.0-flash). Exact model ID is preserved.</span></label>
           </div>
           <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>
 
@@ -7169,10 +7169,27 @@
             <label class="f">Backup service<select id="ai_fb_provider">${k.providers.map(x => `<option value="${esc(x.id)}" ${x.id === (k.fallback_provider || "groq") ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
             <label class="f">Backup Key<input id="ai_fb_key" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="ai_fb_keyhint"></span></label>
             <label class="f" id="ai_fb_basewrap" hidden>Address<input id="ai_fb_base" value="${esc(k.fallback_base_url || "")}" spellcheck="false"><span class="hint">Where the service answers. Only needed for custom.</span></label>
-            <label class="f">Backup Model<span class="with"><input id="ai_fb_model" list="ai_fb_models" value="${esc((k.fallback_models || ["llama-3.1-8b-instant"]).join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aifbmodels">Find models</button></span>
-              <datalist id="ai_fb_models"></datalist><span class="hint">Recommended for fallback: Groq (llama-3.1-8b-instant). Fast and free.</span></label>
+            <label class="f">Backup Model<span class="with"><input id="ai_fb_model" list="ai_fb_models" value="${esc((k.fallback_models || ["openai/gpt-oss-120b"]).join(", "))}" placeholder="(Leave blank to auto-detect)" spellcheck="false"><button class="btn" type="button" data-act="aifbmodels">Find models</button></span>
+              <datalist id="ai_fb_models"></datalist><span class="hint">Recommended for fallback: Groq (openai/gpt-oss-120b). Fast and free.</span></label>
           </div>
-          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aifbsave">Save backup</button>${k.fallback_ready ? `<button class="btn" data-act="aifbtest">Test backup</button><button class="btn ghost" data-act="aifbremove">Remove backup</button>` : ""}</div></section>`;
+          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aifbsave">Save backup</button>${k.fallback_ready ? `<button class="btn" data-act="aifbtest">Test backup</button><button class="btn ghost" data-act="aifbremove">Remove backup</button>` : ""}</div></section>
+
+          ${(k.execution_logs && k.execution_logs.length) ? `<section class="set-sec" style="margin-top:28px"><h3>Model Execution Audit Log</h3><p class="help">Verifies that every AI request is routed to the exact validated model ID without silent substitutions.</p>
+          <div style="overflow-x:auto;font-size:12px;margin-top:10px">
+            <table style="width:100%;border-collapse:collapse;text-align:left">
+              <thead><tr style="border-bottom:1px solid var(--line);color:var(--faint)">
+                <th style="padding:6px">Time</th><th style="padding:6px">Requested Model</th><th style="padding:6px">Dispatched Model</th><th style="padding:6px">Status</th><th style="padding:6px">Latency</th><th style="padding:6px">Details</th>
+              </tr></thead>
+              <tbody>${k.execution_logs.map(l => `<tr style="border-bottom:1px solid rgba(0,0,0,0.05)">
+                <td style="padding:6px">${new Date(l.timestamp * 1000).toLocaleTimeString()}</td>
+                <td style="padding:6px"><code>${esc(l.requested_model)}</code></td>
+                <td style="padding:6px"><code>${esc(l.dispatched_model)}</code></td>
+                <td style="padding:6px"><span class="pill ${l.status === "success" ? "ok" : l.status === "fallback" ? "warn" : "bad"}">${esc(l.status)}</span></td>
+                <td style="padding:6px">${Math.round(l.duration_ms)}ms</td>
+                <td style="padding:6px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${l.status === "error" ? "var(--bad)" : "var(--faint)"}" title="${esc(l.error_message || l.fallback_reason || "OK")}">${esc(l.error_message || l.fallback_reason || "OK")}</td>
+              </tr>`).join("")}</tbody>
+            </table>
+          </div></section>` : ""}`;
           aiHints();
           aiFbHints();
         }
@@ -7470,12 +7487,13 @@
         if (a === "go") { closePops(); return go(d.v, d.tab); }
         if (a === "goset") { closePops(); return go("settings", d.tab || "ai"); }
         if (a === "openfixguide") { closePops(); return openFixGuide(); }
-        if (a === "aimodels") {
+        if (a === "aimodels" || a === "airefresh") {
           b.disabled = true;
           try {
-            const r = await send("/api/ai/models", { provider: $("#ai_provider").value, base_url: $("#ai_base").value, key: $("#ai_key").value });
+            const isRefresh = a === "airefresh";
+            const r = await send(isRefresh ? "/api/ai/registry/refresh" : "/api/ai/models", { provider: $("#ai_provider").value, base_url: $("#ai_base").value, key: $("#ai_key").value, force: isRefresh });
             $("#ai_models").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
-            toast(r.models.length ? `${r.models.length} models found. Click the model box to pick one.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
+            toast(r.models.length ? `${isRefresh ? "Refreshed!" : "Found"} ${r.models.length} models for ${$("#ai_provider").value}.` : "The service listed no models. Type the model yourself.", r.models.length ? "ok" : "");
             if (r.models.length) $("#ai_model").focus();
           } finally { b.disabled = false; }
           return;

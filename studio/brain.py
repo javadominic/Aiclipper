@@ -171,51 +171,44 @@ def _is_rate_limit(err: Exception) -> bool:
 
 
 def ask_ai(prompt, schema=None, purpose="AI call"):
-    """Try each primary model in order. If rate-limited or exhausted, immediately switch to the
-    fallback AI provider if configured. Returns (the answer, model, tokens used)."""
+    """Dispatch to the exact configured model. If rate-limited and opt-in fallback is enabled,
+    switches to the explicitly configured fallback model with complete audit logging."""
     if not config.ai_ready():
         raise RuntimeError("The AI is not set up on this server.")
+
+    ms = ai.models()
+    if not ms:
+        raise RuntimeError("No AI model is configured.")
+
+    primary_model = ms[0]
     last = None
     hit_rate_limit = False
 
-    # 1. Try primary models (including candidate backups for this provider)
-    models_to_try = list(ai.models())
-    for c in ai.PROVIDER_CANDIDATES.get(ai.provider(), []):
-        if c not in models_to_try:
-            models_to_try.append(c)
-
-    for model in models_to_try:
-        for attempt in range(2):
-            try:
-                out, sent, wrote = ai.call(model, prompt, schema or SCHEMA)
-                usage.record(sent, wrote, purpose)
-                ai.clear_problem()
-                return out, model, sent + wrote
-            except Exception as e:  # noqa: BLE001
-                last = e
-                if _is_rate_limit(e):
-                    hit_rate_limit = True
-                    break  # don't wait or retry on this model; switch immediately
-                err_str = str(e).lower()
-                if "404" in err_str or "not found" in err_str or "does not exist" in err_str or "unknown model" in err_str:
-                    break  # model not recognized; try next candidate
-                if "http 5" in err_str or "timed out" in err_str or "timeout" in err_str:
-                    time.sleep(2 * (attempt + 1))
-                    continue
+    # 1. Deterministic primary call to exact model ID
+    for attempt in range(2):
+        try:
+            out, sent, wrote = ai.call(primary_model, prompt, schema or SCHEMA)
+            usage.record(sent, wrote, purpose)
+            ai.clear_problem()
+            return out, primary_model, sent + wrote
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if _is_rate_limit(e):
+                hit_rate_limit = True
                 break
-        if hit_rate_limit:
+            err_str = str(e).lower()
+            if "http 5" in err_str or "timed out" in err_str or "timeout" in err_str:
+                time.sleep(2 * (attempt + 1))
+                continue
             break
 
-    # 2. Switch instantly to fallback provider if configured and primary failed / hit rate limit
-    if (hit_rate_limit or last) and ai.fallback_ready():
+    # 2. Opt-in fallback policy: only switch if fallback is explicitly configured and primary hit limit/outage
+    if (hit_rate_limit or _is_rate_limit(last)) and ai.fallback_ready():
         fb = ai.fallback()
         fb_provider_label = ai.fallback_label()
-        fb_models_to_try = list(ai.fallback_models())
-        for c in ai.PROVIDER_CANDIDATES.get(fb.get("provider", ""), []):
-            if c not in fb_models_to_try:
-                fb_models_to_try.append(c)
-
-        for fb_model in fb_models_to_try:
+        fb_models = ai.fallback_models()
+        if fb_models:
+            fb_model = fb_models[0]
             try:
                 out, sent, wrote = ai.call_fallback(fb_model, prompt, schema or SCHEMA)
                 usage.record(sent, wrote, f"{purpose} ({fb_provider_label})")
@@ -223,7 +216,6 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
                 return out, f"{fb_model} ({fb_provider_label})", sent + wrote
             except Exception as fb_err:  # noqa: BLE001
                 last = fb_err
-                continue
 
     ai.note_problem(last)
     raise RuntimeError(f"The AI did not answer: {ai.explain(last) or last}")

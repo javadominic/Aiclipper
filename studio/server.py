@@ -1277,11 +1277,36 @@ def ai_models(request: Request, body: dict = Body(default={})):
     _admin(request)
     _throttle("aimodels:" + ctx.uid(), 30, 600)
     try:
-        return {"models": ai.list_models(body.get("provider"), body.get("base_url"), body.get("key"))}
+        force = bool(body.get("force", False))
+        return {"models": ai.list_models(body.get("provider"), body.get("base_url"), body.get("key"), force=force)}
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, "The service did not give its list of models. Check the key, or type the model yourself. " + _ai_error(e)[:160])
+
+
+@app.get("/api/ai/registry")
+def ai_registry(request: Request, provider: str = None):
+    _admin(request)
+    return {"registry": ai.get_registry(provider), "aliases": ai.EXPLICIT_MODEL_ALIASES}
+
+
+@app.post("/api/ai/registry/refresh")
+def ai_registry_refresh(request: Request, body: dict = Body(default={})):
+    _admin(request)
+    _throttle("airefresh:" + ctx.uid(), 20, 600)
+    prov = body.get("provider")
+    try:
+        records = ai.refresh_registry(prov)
+        return {"ok": True, "models": [r.id for r in records if not r.is_alias], "count": len(records)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Failed to refresh registry: {_ai_error(e)[:160]}")
+
+
+@app.get("/api/ai/logs")
+def ai_logs(request: Request):
+    _admin(request)
+    return {"logs": ai.get_logs()}
 
 
 @app.post("/api/ai/test")
