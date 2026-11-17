@@ -7,7 +7,8 @@ import tempfile
 
 os.environ["AUTOCLIPPER_DATA"] = tempfile.mkdtemp(prefix="pc-local-")
 os.environ.update(DATABASE_URL="", AUTOCLIPPER_ACCOUNTS="0", AUTOCLIPPER_AI_PROVIDER="gemini", AUTOCLIPPER_AI_MODELS="", AUTOCLIPPER_AI_KEY="",
-                  AUTOCLIPPER_AI_KEY_FILE="", AUTOCLIPPER_AI_BASE_URL="", AUTOCLIPPER_PUBLIC_URL="http://127.0.0.1:8765")
+                  AUTOCLIPPER_AI_KEY_FILE="", AUTOCLIPPER_AI_BASE_URL="", AUTOCLIPPER_PUBLIC_URL="http://127.0.0.1:8765",
+                  AUTOCLIPPER_AI_FALLBACK_PROVIDER="", AUTOCLIPPER_AI_FALLBACK_MODELS="", AUTOCLIPPER_AI_FALLBACK_KEY="")
 sys.path.insert(0, ".")
 from fastapi.testclient import TestClient  # noqa: E402
 

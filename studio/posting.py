@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 import json
+import re
 
 from . import accounts, alerts, config, creators, ctx, jobs, live
 
@@ -90,8 +91,21 @@ def on_clip_ready(job, clip):
         creators.log(c["id"], f"Queued for {len(made)} account(s): {clip.get('title') or clip.get('hook')}")
 
 
+def _tags_list(clip, creator):
+    clip_tags = [h if str(h).startswith("#") else "#" + str(h) for h in clip.get("hashtags", []) if h]
+    camp_raw = creator.get("campaign_tags", "") if creator else ""
+    camp_tags = [t if t.startswith("#") else "#" + t for t in re.split(r"[\s,]+", camp_raw) if t]
+    seen, combined = set(), []
+    for t in (camp_tags + clip_tags):
+        k = t.lower()
+        if k not in seen:
+            seen.add(k)
+            combined.append(t)
+    return combined
+
+
 def _caption(clip, creator):
-    tags = " ".join("#" + h for h in clip.get("hashtags", []))
+    tags = " ".join(_tags_list(clip, creator))
     return "\n\n".join(x for x in (clip.get("description", ""), tags, creator.get("post_footer", "")) if x)
 
 
@@ -107,8 +121,9 @@ def _post(p):
         path = Path(job["dir"]) / "clips" / clip["file"]
         creator = creators.get(job["creator"]) or dict(creators.DEFAULTS, name="clips")
         title, cap = clip.get("title") or clip.get("hook") or "Clip", _caption(clip, creator)
+        all_tags = [t.lstrip("#") for t in _tags_list(clip, creator)]
         if acc["platform"] == "youtube":
-            rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"])
+            rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", all_tags, creator["privacy"])
         elif acc["platform"] == "instagram":
             rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
         elif acc["platform"] == "tiktok":
@@ -119,7 +134,18 @@ def _post(p):
         creators.log(p["creator"], f"Posted to {acc['name']}: {title}")
     except Exception as e:  # noqa: BLE001
         p["tries"] += 1
-        p["error"] = str(e)[-300:]
+        err_msg = str(e)
+        try:
+            # Error strings look like "Starting the upload failed (400): {...json...}"
+            # Find the first { and parse from there
+            json_start = err_msg.find("{")
+            candidate = err_msg[json_start:] if json_start >= 0 else err_msg
+            parsed = json.loads(candidate)
+            if "error" in parsed and "message" in parsed["error"]:
+                err_msg = parsed["error"]["message"]
+        except Exception:
+            pass
+        p["error"] = err_msg[-300:]
         if p["tries"] < 3 and clip and acc:
             p.update(status="scheduled", due_at=time.time() + 600)  # try again in 10 minutes
         else:

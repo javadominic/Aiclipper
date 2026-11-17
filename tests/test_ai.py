@@ -7,7 +7,8 @@ import tempfile
 
 os.environ["AUTOCLIPPER_DATA"] = tempfile.mkdtemp(prefix="pc-ai-")
 os.environ["DATABASE_URL"] = ""
-os.environ.update(AUTOCLIPPER_AI_PROVIDER="gemini", AUTOCLIPPER_AI_MODELS="model-a, model-b", AUTOCLIPPER_AI_KEY="test-key-123456", AUTOCLIPPER_AI_BASE_URL="")
+os.environ.update(AUTOCLIPPER_AI_PROVIDER="gemini", AUTOCLIPPER_AI_MODELS="model-a, model-b", AUTOCLIPPER_AI_KEY="test-key-123456", AUTOCLIPPER_AI_BASE_URL="",
+                  AUTOCLIPPER_AI_FALLBACK_PROVIDER="", AUTOCLIPPER_AI_FALLBACK_MODELS="", AUTOCLIPPER_AI_FALLBACK_KEY="")
 sys.path.insert(0, ".")
 from studio import ai, auth, brain, config, ctx, db, usage  # noqa: E402
 

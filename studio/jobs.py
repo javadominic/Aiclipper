@@ -352,6 +352,14 @@ def request_render(jid, cid, changes: dict):
     for k in ("hook", "title", "description", "style", "layout"):
         if k in changes:
             new[k] = str(changes[k])[:{"hook": 60, "title": 100, "description": 2000}.get(k, 20)]
+    if "hashtags" in changes:
+        raw = changes["hashtags"]
+        if isinstance(raw, list):
+            tags = raw
+        else:
+            import re as _re
+            tags = [t.strip().lstrip("#") for t in _re.split(r"[\s,]+", str(raw)) if t.strip()]
+        new["hashtags"] = [_re.sub(r"\W", "", t)[:30] for t in tags if t][:12]
     if new.get("style") not in render.STYLES:
         new["style"] = DEFAULTS["style"]
     if new.get("layout") not in render.LAYOUTS:

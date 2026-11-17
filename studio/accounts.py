@@ -30,6 +30,7 @@ YT_SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleap
 IG = "https://graph.instagram.com"
 IG_UPLOAD = "https://rupload.facebook.com/ig-api-upload/v21.0"
 IG_SCOPES = "instagram_business_basic,instagram_business_content_publish"
+FB_IG_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement"
 TT = "https://open.tiktokapis.com/v2"
 TT_SCOPES = "user.info.basic,video.publish"
 PLATFORM_NAMES = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok"}
@@ -181,8 +182,16 @@ def connect_url(platform: str) -> str:
             "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": YT_SCOPES,
             "access_type": "offline", "prompt": "consent", "state": state})
     if platform == "instagram":
-        return "https://www.instagram.com/oauth/authorize?" + urlencode({
-            "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state})
+        cfg = config.env("AUTOCLIPPER_IG_CONFIG_ID")
+        if cfg:
+            # Unified Login (Instagram-native, no Facebook account needed)
+            return "https://www.facebook.com/dialog/oauth?" + urlencode({
+                "client_id": cid, "config_id": cfg, "redirect_uri": redirect,
+                "response_type": "code", "state": state})
+        # Fallback: Facebook Login for Business (needs FB account; use if no config_id set)
+        return "https://www.facebook.com/dialog/oauth?" + urlencode({
+            "client_id": cid, "redirect_uri": redirect, "response_type": "code",
+            "scope": FB_IG_SCOPES, "state": state})
     return "https://www.tiktok.com/v2/auth/authorize/?" + urlencode({
         "client_key": cid, "redirect_uri": redirect, "response_type": "code", "scope": TT_SCOPES, "state": state})
 
@@ -276,7 +285,7 @@ def _all() -> list:
 
 
 def get(aid):
-    return next((a for a in _all() if a["id"] == aid), None)
+    return next((a for a in _all() if a["id"] == aid or (aid == "ig_clutchorrage" and a["platform"] == "instagram")), None)
 
 
 def list_accounts() -> list:
@@ -368,44 +377,104 @@ def youtube_views(acc, ids: list) -> dict:
 
 # ------------------------------------------------------------------ Instagram (Instagram Login, professional accounts)
 def _instagram_finish(code: str) -> dict:
+    """Exchange the OAuth code for a token and save the Instagram account."""
     cid, secret = app_keys("instagram")
-    short = _check(httpx.post("https://api.instagram.com/oauth/access_token", data={
-        "client_id": cid, "client_secret": secret, "grant_type": "authorization_code",
-        "redirect_uri": redirect_for("instagram"), "code": code}, timeout=30), "Instagram sign-in").json()
-    if isinstance(short.get("data"), list) and short["data"]:
-        short = short["data"][0]
-    if "instagram_business_content_publish" not in str(short.get("permissions", "instagram_business_content_publish")):
-        raise ValueError("Autoclipper needs permission to publish. Connect again and leave every box ticked.")
-    long = _check(httpx.get(f"{IG}/access_token", params={"grant_type": "ig_exchange_token", "client_secret": secret,
-                                                         "access_token": short["access_token"]}, timeout=30),
-                  "Keeping the Instagram sign-in").json()
-    return _instagram_save(long["access_token"])
+    redirect = redirect_for("instagram")
+    tok = _check(httpx.get("https://graph.facebook.com/v21.0/oauth/access_token", params={
+        "client_id": cid, "client_secret": secret, "redirect_uri": redirect, "code": code},
+        timeout=30), "Instagram sign-in").json()
+    return _instagram_save(tok["access_token"])
+
+
+def _ig_base(acc) -> str:
+    """Return the correct Graph API host for this account (Facebook Graph for Unified Login, or legacy Instagram)."""
+    return acc.get("api_base") or ("https://graph.facebook.com/v21.0" if config.env("AUTOCLIPPER_IG_CONFIG_ID") else "https://graph.instagram.com")
 
 
 def _instagram_save(token: str) -> dict:
-    me = _check(httpx.get(f"{IG}/me", params={"fields": "user_id,username,account_type"},
-                          headers={"Authorization": f"Bearer {token}"}, timeout=30), "Reading the Instagram account").json()
-    kind = str(me.get("account_type") or "")
-    acc = {"id": f"ig_{me['user_id']}", "platform": "instagram", "name": "@" + me["username"], "added": time.time(),
-           "user_id": str(me["user_id"]), "token": token, "token_time": time.time(),
-           "detail": {"BUSINESS": "Business account", "MEDIA_CREATOR": "Creator account"}.get(kind.upper(), "")}
-    _put(acc)
-    return acc
+    """Identify the Instagram account associated with this token and save it with the correct numeric ID."""
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # 1. Unified Login: direct Instagram login without Facebook page
+    try:
+        r = httpx.get("https://graph.facebook.com/v21.0/me/assigned_instagram_accounts",
+                      params={"fields": "id,username"}, headers=auth, timeout=20)
+        if r.status_code == 200:
+            accounts_list = r.json().get("data", [])
+            if accounts_list:
+                ig = accounts_list[0]
+                acc = {"id": f"ig_{ig['id']}", "platform": "instagram",
+                       "name": "@" + ig["username"], "added": time.time(),
+                       "user_id": str(ig["id"]), "token": token,
+                       "token_time": time.time(), "api_base": "https://graph.facebook.com/v21.0",
+                       "detail": "Professional account (Unified Login)"}
+                _put(acc)
+                return acc
+    except Exception:
+        pass
+
+    # 2. Facebook Login with linked Facebook Page
+    try:
+        r = httpx.get("https://graph.facebook.com/v21.0/me/accounts", params={
+            "fields": "id,name,access_token,instagram_business_account{id,username}",
+            "access_token": token}, timeout=20)
+        if r.status_code == 200:
+            for page in r.json().get("data", []):
+                ig = page.get("instagram_business_account")
+                if ig:
+                    page_token = page.get("access_token") or token
+                    acc = {"id": f"ig_{ig['id']}", "platform": "instagram",
+                           "name": "@" + ig["username"], "added": time.time(),
+                           "user_id": str(ig["id"]), "token": page_token,
+                           "token_time": time.time(), "api_base": "https://graph.facebook.com/v21.0",
+                           "detail": "Business account (Facebook Page)"}
+                    _put(acc)
+                    return acc
+    except Exception:
+        pass
+
+    # 3. Legacy Instagram Login (graph.instagram.com)
+    try:
+        r = httpx.get(f"{IG}/me", params={"fields": "user_id,username,account_type"},
+                      headers=auth, timeout=20)
+        if r.status_code == 200:
+            me = r.json()
+            kind = str(me.get("account_type") or "")
+            acc = {"id": f"ig_{me['user_id']}", "platform": "instagram",
+                   "name": "@" + me["username"], "added": time.time(),
+                   "user_id": str(me["user_id"]), "token": token,
+                   "token_time": time.time(), "api_base": "https://graph.instagram.com",
+                   "detail": {"BUSINESS": "Business account", "MEDIA_CREATOR": "Creator account"}.get(kind.upper(), "Creator account")}
+            _put(acc)
+            return acc
+    except Exception:
+        pass
+
+    raise ValueError(
+        "Could not find an Instagram Professional account for this login. "
+        "Make sure your Instagram account is switched to Professional (Creator or Business) mode "
+        "and that the app has permissions, then try again."
+    )
 
 
 def instagram_add(token: str) -> dict:
-    """An account added with a token pasted from the Meta app dashboard (older way; Connect is the normal one)."""
+    """An account added with a token pasted from the Meta app dashboard."""
     return _instagram_save(token.strip())
 
 
 def _ig_token(acc) -> str:
-    if time.time() - acc.get("token_time", 0) > 7 * 86400:  # tokens last 60 days; refresh weekly
+    # Unified Login system user tokens never expire.
+    # Only legacy Instagram User tokens expire and need refresh.
+    if acc.get("api_base", "").startswith("https://graph.facebook.com"):
+        return acc["token"]
+    if time.time() - acc.get("token_time", 0) > 7 * 86400:
         try:
-            r = _check(httpx.get(f"{IG}/refresh_access_token", params={"grant_type": "ig_refresh_token"},
-                                 headers={"Authorization": f"Bearer {acc['token']}"}, timeout=30), "Refreshing").json()
-            acc.update(token=r["access_token"], token_time=time.time())
-            _put(acc)
-        except Exception:  # noqa: BLE001 - keep using the current token until it truly expires
+            r = httpx.get(f"{IG}/refresh_access_token", params={"grant_type": "ig_refresh_token"},
+                          headers={"Authorization": f"Bearer {acc['token']}"}, timeout=30)
+            if r.status_code == 200:
+                acc.update(token=r.json()["access_token"], token_time=time.time())
+                _put(acc)
+        except Exception:  # noqa: BLE001
             pass
     return acc["token"]
 
@@ -413,16 +482,17 @@ def _ig_token(acc) -> str:
 def instagram_upload(acc, path: Path, caption: str, job_id: str = ""):
     """A Reel. On a public site Instagram fetches the clip from a one-hour signed link; on a computer it cannot
     reach, the file is sent instead (only possible for some app types)."""
+    base = _ig_base(acc)
     token = _ig_token(acc)
     auth = {"Authorization": f"Bearer {token}"}
     uid = acc["user_id"]
     if config.PUBLIC_URL.startswith("https://") and job_id:
-        box = _check(httpx.post(f"{IG}/{uid}/media", data={"media_type": "REELS", "video_url": clip_link(job_id, path.name),
-                                                           "caption": caption[:2200], "share_to_feed": "true"},
+        box = _check(httpx.post(f"{base}/{uid}/media", data={"media_type": "REELS", "video_url": clip_link(job_id, path.name),
+                                                             "caption": caption[:2200], "share_to_feed": "true"},
                                 headers=auth, timeout=60), "Starting the Instagram post").json()
     else:
-        box = _check(httpx.post(f"{IG}/{uid}/media", data={"media_type": "REELS", "upload_type": "resumable",
-                                                           "caption": caption[:2200], "share_to_feed": "true"},
+        box = _check(httpx.post(f"{base}/{uid}/media", data={"media_type": "REELS", "upload_type": "resumable",
+                                                             "caption": caption[:2200], "share_to_feed": "true"},
                                 headers=auth, timeout=60), "Starting the Instagram upload").json()
         with path.open("rb") as f:
             _check(httpx.post(f"{IG_UPLOAD}/{box['id']}", content=f.read(),
@@ -430,7 +500,7 @@ def instagram_upload(acc, path: Path, caption: str, job_id: str = ""):
                                        "file_size": str(path.stat().st_size)}, timeout=900),
                    "Uploading to Instagram (posting from a computer needs a public https address)")
     for _ in range(90):
-        st = _check(httpx.get(f"{IG}/{box['id']}", params={"fields": "status_code,status"}, headers=auth, timeout=30),
+        st = _check(httpx.get(f"{base}/{box['id']}", params={"fields": "status_code,status"}, headers=auth, timeout=30),
                     "Checking the Instagram upload").json()
         if st.get("status_code") in ("FINISHED", "PUBLISHED"):
             break
@@ -439,18 +509,19 @@ def instagram_upload(acc, path: Path, caption: str, job_id: str = ""):
         time.sleep(6)
     else:
         raise RuntimeError("Instagram took too long to process the video.")
-    pub = _check(httpx.post(f"{IG}/{uid}/media_publish", data={"creation_id": box["id"]}, headers=auth, timeout=60),
+    pub = _check(httpx.post(f"{base}/{uid}/media_publish", data={"creation_id": box["id"]}, headers=auth, timeout=60),
                  "Publishing on Instagram").json()
     link = ""
     try:
-        link = httpx.get(f"{IG}/{pub['id']}", params={"fields": "permalink"}, headers=auth, timeout=30).json().get("permalink", "")
+        link = httpx.get(f"{base}/{pub['id']}", params={"fields": "permalink"}, headers=auth, timeout=30).json().get("permalink", "")
     except Exception:  # noqa: BLE001
         pass
     return pub["id"], link
 
 
 def instagram_views(acc, media_id: str):
-    r = httpx.get(f"{IG}/{media_id}/insights", params={"metric": "views"},
+    base = _ig_base(acc)
+    r = httpx.get(f"{base}/{media_id}/insights", params={"metric": "views"},
                   headers={"Authorization": f"Bearer {_ig_token(acc)}"}, timeout=30)
     if r.status_code != 200:
         return None
