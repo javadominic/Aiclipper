@@ -36,17 +36,22 @@ def send(text: str) -> list:
     return problems
 
 
-def notify(text: str, kind: str = "live", link: str = ""):
+def notify(text: str, kind: str = "live", link: str = "", body: str = ""):
     """Fire and forget, so a slow network never holds up recording or posting. Also shows in the app's bell."""
+    title = text
+    if not body and ": " in text:
+        title, body = text.split(": ", 1)
+    title = title[:1].upper() + title[1:]
     try:
         from . import notices
         uid = ctx.uid_or_none()
         if uid:
-            notices.add(uid, kind, text[:1].upper() + text[1:160], "", link)
+            notices.add(uid, kind, title[:160], body[:600], link)
     except Exception:  # noqa: BLE001
         pass
     if configured():
-        threading.Thread(target=ctx.bind(send), args=("Autoclipper: " + text,), daemon=True).start()
+        ext_text = f"{title}: {body}" if body else title
+        threading.Thread(target=ctx.bind(send), args=("PeakCut: " + ext_text,), daemon=True).start()
 
 
 def digest_loop(make_summary):

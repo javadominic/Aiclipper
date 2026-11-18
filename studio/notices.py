@@ -22,7 +22,7 @@ def add(uid, kind: str, title: str, body: str = "", link: str = "", ref: str = N
         if ref and c.execute(sa.select(n.id).where(n.user_id == uid, n.ref == ref)).first():
             return
         c.execute(db.notices.insert().values(user_id=uid, t=time.time(), kind=kind[:20], title=title[:160],
-                                             body=(body or "")[:400], link=(link or "")[:200], ref=(ref or None)))
+                                             body=(body or "")[:1000], link=(link or "")[:200], ref=(ref or None)))
         old = [r[0] for r in c.execute(sa.select(n.id).where(n.user_id == uid).order_by(n.t.desc()).offset(KEEP))]
         if old:
             c.execute(db.notices.delete().where(n.id.in_(old)))

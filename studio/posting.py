@@ -151,7 +151,7 @@ def _post(p):
         else:
             p["status"] = "failed"
             creators.log(p["creator"], f"Post failed on {p['account_name']}: {p['error']}")
-            alerts.notify(f"post failed on {p['account_name']} ({p['title']}): {p['error'][:200]}", kind="post")
+            alerts.notify(f"Post failed on {p['account_name']}", kind="post", body=f"{p['title']}: {p['error']}")
     _save()
     _mirror(p)
 

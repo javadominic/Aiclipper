@@ -940,6 +940,14 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
     return jobs.public(job)
 
 
+@app.post("/api/jobs/{jid}/stop")
+def stop_job(jid: str):
+    _job_or_404(jid)
+    if not jobs.stop(jid):
+        raise HTTPException(400, "This video cannot be stopped or has already finished.")
+    return {"ok": True}
+
+
 @app.delete("/api/jobs/{jid}")
 def delete_job(jid: str):
     job = _job_or_404(jid)

@@ -335,6 +335,24 @@ def delete(jid):
     return bool(job)
 
 
+def stop(jid) -> bool:
+    """Stop producing more clips from this video. Existing clips stay and can be edited/posted."""
+    with _lock:
+        job = _jobs.get(jid)
+        if not job or job.get("user") != ctx.uid() or job.get("status") not in ("queued", "running"):
+            return False
+        job["stop_requested"] = True
+        if job.get("status") == "queued":
+            job["status"] = "done"
+            job["stage"] = "Done (stopped)"
+            job["progress"] = 1.0
+        else:
+            job["stage"] = "Stopping and keeping current clips..."
+    save(job)
+    ctx.bump(job.get("user"))
+    return True
+
+
 def request_render(jid, cid, changes: dict):
     job = _jobs[jid]
     clip = next(c for c in job["clips"] if c["id"] == cid)
@@ -528,6 +546,9 @@ def _run_job(job):
         _set(job, stage="Getting the audio")
     fetch = ThreadPoolExecutor(1)
     video = None
+    if job.get("stop_requested"):
+        _set(job, status="done", stage="Done (stopped)", progress=1.0)
+        return
     if src["type"] == "url":
         meta = media.info(src["url"])
         if meta["kind"] != "video":
@@ -665,6 +686,9 @@ def _run_job(job):
             heard[i] = ahead.submit(ctx.bind(transcribe.transcribe), audio[a_:b_], tp)
 
     for bi, (a, b) in enumerate(blocks):
+        if job.get("stop_requested"):
+            notes.append("Generation stopped by user.")
+            break
         if bi < done_blocks:
             continue                      # transcribed and checked by the AI before the restart
         shift = a / 16000
@@ -681,6 +705,9 @@ def _run_job(job):
         _set(job, progress=max(job["progress"], 0.14 + 0.78 * (b - lo) / max(1, hi - lo)))
         words += [dict(w, s=round(w["s"] + shift, 2), e=round(w["e"] + shift, 2)) for w in bw]
         (d / "words.json").write_text(json.dumps(words), encoding="utf-8")
+        if job.get("stop_requested"):
+            notes.append("Generation stopped by user.")
+            break
         _set(job, stage="Finding the best moments" + where, word_count=len(words))
         left = int(o["max_clips"]) - len(job["clips"])
         if left <= 0 or len(bw) < 8:
@@ -719,6 +746,8 @@ def _run_job(job):
     job["ai"] = {"model": model, "tokens": tokens, "log": notes[-5:],
                  "note": "The AI was unavailable, so clips were picked by loudness only." if clips and not model else ""}
     stage = "Done" if clips else "Done, but nothing clip-worthy was found"
+    if job.get("stop_requested"):
+        stage = f"Done ({len(clips)} clip{'s' if len(clips) != 1 else ''} kept, stopped early)"
     _set(job, status="done", stage=stage, progress=1.0, took=round(time.time() - t0))
     try:
         from . import notices
@@ -740,7 +769,7 @@ def _worker(quick_only=False):
                 traceback.print_exc()
             continue
         job = _jobs.get(a)
-        if not job:
+        if not job or (kind == "job" and job.get("stop_requested") and job.get("status") == "done"):
             if kind == "job":
                 _q.done()
             continue

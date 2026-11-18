@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Autoclipper</title>
+  <title>PeakCut</title>
   <link rel="icon" type="image/svg+xml" href="/brand/favicon.svg?v=25">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,41 +52,47 @@
     }
 
     .brand-badge .brand-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #10B981, #047857);
-      color: #FFFFFF;
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: #111827;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--brand);
       display: grid;
       place-items: center;
-      box-shadow: 0 2px 10px rgba(16, 185, 129, .35);
-      flex: none
+      flex: none;
+      transition: border-color .15s ease, background-color .15s ease;
+    }
+
+    .brand-badge:hover .brand-icon {
+      background: #1A2234;
+      border-color: rgba(255, 255, 255, 0.2);
     }
 
     .brand-badge .brand-icon svg {
       width: 20px;
       height: 20px;
-      stroke-width: 2.2
     }
 
     .brand-badge .brand-text {
       display: flex;
       flex-direction: column;
-      line-height: 1.15
+      line-height: 1.15;
     }
 
     .brand-badge .brand-name {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
-      letter-spacing: -.3px;
-      color: #F8FAFC
+      letter-spacing: -.02em;
+      color: #F8FAFC;
     }
 
     .brand-badge .brand-sub {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      color: #10B981
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #64748B;
     }
 
     .app.mini .brand-badge .brand-text {
@@ -347,10 +353,12 @@
     }
 
     .nav h4 {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--frame-dim);
-      padding: 14px 10px 4px
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #64748B;
+      padding: 16px 10px 6px;
     }
 
     .nav-item {
@@ -358,39 +366,56 @@
       align-items: center;
       gap: 10px;
       width: 100%;
-      min-height: 34px;
+      min-height: 36px;
       padding: 0 10px;
-      border-radius: 7px;
+      border-radius: 8px;
       border: 0;
       background: transparent;
-      color: var(--frame-text);
-      font-size: 14px;
+      color: #94A3B8;
+      font-size: 13.5px;
       font-weight: 500;
       cursor: pointer;
-      text-align: left
+      text-align: left;
+      transition: background-color .15s ease, color .15s ease;
+      position: relative;
     }
 
     .nav-item svg {
       width: 17px;
-      height: 17px
+      height: 17px;
+      color: #64748B;
+      flex: none;
+      transition: color .15s ease;
     }
 
-    .nav-item svg {
-      color: var(--frame-dim)
+    .nav-item:hover {
+      background: rgba(255, 255, 255, .05);
+      color: #F8FAFC;
     }
 
-    .nav-item:active {
-      background: var(--frame-2)
+    .nav-item:hover svg {
+      color: #CBD5E1;
     }
 
     .nav-item.on {
-      background: var(--brand);
-      color: var(--brand-ink);
-      font-weight: 600
+      background: rgba(255, 255, 255, .08);
+      color: #FFFFFF;
+      font-weight: 600;
     }
 
     .nav-item.on svg {
-      color: var(--brand-ink)
+      color: var(--brand);
+    }
+
+    .nav-item.on::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+      background: var(--brand);
     }
 
     .label {
@@ -404,16 +429,29 @@
     .count {
       font-size: 11px;
       font-weight: 600;
-      padding: 2px 8px;
+      padding: 1px 7px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, .1);
-      color: var(--frame-text);
-      white-space: nowrap
+      background: rgba(255, 255, 255, .08);
+      color: #94A3B8;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
 
     .nav-item.on .count {
-      background: rgba(42, 26, 18, .14);
-      color: var(--brand-ink)
+      background: rgba(16, 185, 129, .15);
+      color: var(--brand);
+    }
+
+    .nav-item.add-creator-nav {
+      color: #64748B;
+      font-size: 13px;
+      border: 1px dashed rgba(255, 255, 255, .1);
+      margin-top: 4px;
+    }
+
+    .nav-item.add-creator-nav:hover {
+      border-color: rgba(255, 255, 255, .2);
+      color: #E2E8F0;
     }
 
     .avatar {
@@ -4727,9 +4765,9 @@
       z-index: 60;
       left: 248px;
       bottom: 12px;
-      width: 360px;
+      width: 440px;
       max-width: calc(100vw - 24px);
-      max-height: min(520px, calc(100vh - 100px));
+      max-height: min(560px, calc(100vh - 100px));
       display: flex;
       flex-direction: column;
       background: #fff;
@@ -4858,10 +4896,13 @@
 
     .nt span {
       display: block;
-      font-size: 12px;
-      color: var(--dim);
-      margin-top: 2px;
-      overflow-wrap: anywhere
+      font-size: 12.5px;
+      color: #475569;
+      line-height: 1.45;
+      margin-top: 3px;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
 
     .nt small {
@@ -5969,20 +6010,16 @@
   <div class="app" id="app">
     <aside class="side" aria-label="Sidebar">
       <div class="side-head">
-        <div class="brand-badge" data-act="go" data-v="overview" title="Autoclipper">
+        <div class="brand-badge" data-act="go" data-v="overview" title="PeakCut">
           <span class="brand-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-              stroke-linejoin="round">
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <line x1="20" y1="4" x2="8.12" y2="15.88" />
-              <line x1="14.47" y1="14.48" x2="20" y2="20" />
-              <line x1="8.12" y1="8.12" x2="12" y2="12" />
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19L11 5L15 13L18 8L21 19H4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+              <line x1="2" y1="14" x2="22" y2="14" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" />
             </svg>
           </span>
           <div class="brand-text">
-            <span class="brand-name">Autoclipper</span>
-            <span class="brand-sub">AI STUDIO</span>
+            <span class="brand-name">PeakCut</span>
+            <span class="brand-sub">STUDIO</span>
           </div>
         </div>
         <button class="icon-btn collapse" data-act="collapse" id="collapseBtn" aria-label="Collapse sidebar"></button>
@@ -6462,26 +6499,26 @@
     function drawShell() {
       const nav = (v, icon, label, extra = "") => `<button class="nav-item ${S.view === v ? "on" : ""}" data-act="go" data-v="${esc(v)}" title="${esc(label)}">${icon}<span class="label">${esc(label)}</span>${extra}</button>`;
       const navSet = (tab, icon, label, extra = "") => `<button class="nav-item ${S.view === "settings" && S.stab === tab ? "on" : ""}" data-act="goset" data-tab="${esc(tab)}" title="${esc(label)}">${icon}<span class="label">${esc(label)}</span>${extra}</button>`;
-      put($("#nav"), `<h4><span>Workspace</span></h4>` +
+      put($("#nav"), `<h4>Workspace</h4>` +
         nav("overview", navIc("home", "overview"), "Home") +
         nav("library", navIc("film", "library"), "All videos", (() => {
           const w = S.jobs.filter(j => ["queued", "running"].includes(j.status)).length;
           return w ? `<span class="working" title="${w} working now"><i></i>${w} working</span>` : S.jobs.length ? `<span class="count">${S.jobs.length}</span>` : "";
         })()) +
         nav("usage", ic("chart"), "AI Usage") +
-        `<h4><span>Creators</span></h4>` +
+        `<h4>Creators</h4>` +
         S.creators.map(c => nav("c:" + c.id, cav(c), c.name,
           c.live_job ? `<span class="sb-tag rec" title="Recording now"><i></i>Rec</span>`
             : liveOn(c).length ? `<span class="sb-tag" title="Live on ${esc(liveOn(c).map(([k]) => PLAT[k].name).join(" and "))}"><i></i>Live</span>` : "")).join("") +
-        `<button class="nav-item" data-act="newcreator" title="New creator">${ic("plusc")}<span class="label">New creator</span></button>` +
-        `<h4><span>Settings</span></h4>` +
+        `<button class="nav-item add-creator-nav" data-act="newcreator" title="Add a creator">${ic("plus")}<span class="label">Add creator</span></button>` +
+        `<h4>Settings</h4>` +
         (S.status.user?.is_admin ? navSet("ai", ic("bolt"), "AI Engine", S.status.ai?.ready ? `<span class="led" style="background:#10B981;margin-left:auto" title="Active"></span>` : `<span class="led no" style="margin-left:auto" title="Needs key"></span>`) : "") +
         navSet("apps", ic("plug"), "Connected Apps", (S.accounts?.length ? `<span class="count">${S.accounts.length}</span>` : "")) +
         (S.status.user?.is_admin ? navSet("storage", ic("folder"), "Storage & Limits") : "") +
         (S.status.accounts !== false ? navSet("profile", ic("user"), "Profile & Security") : "") +
-        `<h4><span>Troubleshooting</span></h4>` +
-        `<button class="nav-item help-nav-btn" data-act="openfixguide" title="How to fix setup & OAuth problems">${ic("bulb")}<span class="label">Fix Setup & OAuth</span><span class="guide-tag">Guide</span></button>` +
-        (S.status.user?.role === "admin" && S.status.accounts !== false ? `<h4><span>Owner</span></h4><a class="nav-item" href="/admin" title="Admin dashboard" style="text-decoration:none">${ic("shield")}<span class="label">Admin dashboard</span></a>` : ""));
+        `<h4>Help</h4>` +
+        `<button class="nav-item" data-act="openfixguide" title="Setup & OAuth troubleshooting guide">${ic("bulb")}<span class="label">Setup & OAuth Guide</span></button>` +
+        (S.status.user?.role === "admin" && S.status.accounts !== false ? `<h4>Owner</h4><a class="nav-item" href="/admin" title="Admin dashboard" style="text-decoration:none">${ic("shield")}<span class="label">Admin dashboard</span></a>` : ""));
       const st = S.status;
       const k = S.status.ai;
       put($("#foot"), (k ? `<button class="ai-card ${S.view === "usage" ? "on" : ""}" data-act="go" data-v="usage" title="${k.ready ? `AI: ${esc(k.provider || "ready")}, ${k.today_calls || 0} calls today` : "The AI is not set up"}">
@@ -6974,7 +7011,9 @@
         j.took ? "made in " + fmt(j.took) : "", j.kind === "live" ? "recording, " + j.stage.toLowerCase() : ""].filter(Boolean).map(esc).join(" · ");
       const pic = j.thumb ? `<img src="/media/${esc(j.id)}/thumb.jpg" alt="" loading="lazy">` : ic(j.source?.type === "file" ? "film" : "link");
       return `<div class="job-head"><div class="jt"><span class="jthumb">${pic}${j.duration ? `<span class="du">${fmt(j.duration)}</span>` : ""}</span><div style="min-width:0"><h3>${esc(j.title || j.source.name)}</h3><p class="sub">${meta}</p></div></div>
-      <div class="row" style="flex-wrap:nowrap;gap:4px">${busy ? "" : `
+      <div class="row" style="flex-wrap:nowrap;gap:4px">${busy ? `
+        <button class="btn sm ghost" data-act="stopjob" data-j="${j.id}" title="Stop generating more clips" style="color:var(--bad);gap:4px">${ic("stop")}Stop generating</button>
+      ` : `
         ${j.clips.some(c => c.status === "done") ? `<button class="btn sm icon ghost" data-act="dlall" data-j="${j.id}" title="Download all clips of this video" aria-label="Download all clips of this video">${ic("down")}</button>` : ""}
         <button class="btn sm icon ghost" data-act="deljob" data-j="${j.id}" title="Delete" aria-label="Delete this video and its clips">${ic("trash")}</button>
         <label class="selck" title="Select this video and its clips"><input type="checkbox" data-sel="j:${j.id}" ${sel().has("j:" + j.id) ? "checked" : ""} aria-label="Select this video"></label>`}</div></div>
@@ -7878,6 +7917,10 @@
           if (!typed) return;
           await send("/api/account/delete", { confirm: typed });
           location.href = "/"; return;
+        }
+        if (a === "stopjob") {
+          if (!await ask("Stop generating clips?", "PeakCut will finish any clip currently being rendered and stop scanning for more clips. All clips found so far stay ready to edit and post.", "Stop generating", false)) return;
+          await api(`/api/jobs/${d.j}/stop`, { method: "POST" }); toast("Stopping generation — keeping current clips", "ok"); return tick();
         }
         if (a === "deljob") {
           if (!await ask("Delete this video?", "The video and all of its clips are permanently deleted. This cannot be undone.", "Delete", true)) return;
