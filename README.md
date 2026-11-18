@@ -2,7 +2,7 @@
 ### Open-Source AI Video Clipper & Automated Shorts Maker
 **Turn YouTube, Twitch & Kick live streams and long videos into viral, captioned vertical clips in minutes.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![FFmpeg Full](https://img.shields.io/badge/FFmpeg-libass%20enabled-green.svg)](https://ffmpeg.org/)
 [![Self-Hosted](https://img.shields.io/badge/Privacy-100%25%20Local%20%26%20Self--Hosted-darkgreen.svg)](#privacy--security)
@@ -25,7 +25,7 @@ Simply paste any **YouTube**, **Twitch**, or **Kick** video link (or upload an M
 ## ⚡ Key Features
 
 - **Live Stream Highlight Clipper:** Connect a live stream from Twitch, Kick, or YouTube. Autoclipper records into a rolling buffer and extracts viral clips *while the creator is still streaming*.
-- **Campaign Briefs & Custom AI Guidelines:** Upload or paste full creator briefs (e.g. Clipping Nation, Whop campaigns, or brand rules). Autoclipper tailors moment selection to what the campaign rewards, enforces mandatory CTAs and @mentions, crafts 2-second retention hooks, and auto-extracts all required campaign hashtags.
+- **Campaign Briefs & Custom AI Guidelines:** Upload or paste full creator briefs (e.g. Clipping Nation, Whop campaigns, or brand rules) at the **creator level** or **per individual video** at clip time. Autoclipper tailors moment selection to what the campaign rewards, enforces mandatory CTAs and @mentions, crafts 2-second retention hooks, and auto-extracts all required campaign hashtags.
 - **In-Progress Generation Control ("Stop Generating"):** Cancel heavy video processing midway with a single click. Safely keeps and renders all clips found up to that point so you can edit and export them immediately without wasting extra AI tokens.
 - **Multi-Creator Workspaces:** Manage multiple streamers and channels with independent settings, custom caption presets, dedicated campaign briefs, and social post queues.
 - **On-Device Speech-to-Text:** Uses `sherpa-onnx` and FastConformer/Parakeet models running locally. Fast, private, and zero third-party transcription fees.
@@ -176,15 +176,26 @@ Need to stop a long video from generating more clips without losing the work alr
 ---
 
 ### 🎯 Creator Campaign Briefs & Clipping Bounties
-If you clip for creator campaigns, Whop bounties, or clipping networks (like Clipping Nation):
+If you clip for creator campaigns, Whop bounties, or clipping networks (like Clipping Nation), you can supply a campaign brief in two ways:
+
+#### Option A — Creator-level brief (applies to every video for that creator)
 1. Go to **Creators → Setup** (or the creator's edit tab).
 2. Paste the full campaign brief, rules, and guidelines into the **Campaign Brief & AI Guidelines** box (or click **Upload brief** to import a `.txt` or `.md` file).
-3. Autoclipper automatically:
-   - **Targets rewarded moments:** Scans specifically for high-bounty angles (e.g. funny fails, first reactions, crazy stunts) rather than generic talk.
-   - **Enforces mandatory CTAs & Mentions:** Embeds required creator handles (e.g. `@Tomovids`) and call-to-actions in the description.
-   - **Optimizes Hooks:** Constructs sharp 2-second retention hooks for Tier-1 audiences.
-   - **Pulls Campaign Hashtags:** Automatically extracts all `#hashtags` found in the brief and attaches them to scheduled social posts.
-4. When the campaign ends, click **Clear brief** to instantly return to standard, neutral clipping.
+3. Every video clipped for that creator automatically uses the brief until you clear it.
+
+#### Option B — Per-video brief (one-off, that video only)
+1. Paste your video link as usual.
+2. Click **Options** to expand the options panel.
+3. Scroll to the **Campaign brief** box at the bottom, paste the brief (or click **Upload brief**).
+4. Click **Make clips**. Only that video uses the brief — no other videos are affected.
+
+#### What the AI does with the brief (both options):
+- **Targets rewarded moments:** Scans specifically for high-bounty angles (e.g. funny fails, first reactions, crazy stunts) rather than generic talk.
+- **Enforces mandatory CTAs & Mentions:** Embeds required creator handles (e.g. `@Tomovids`) and call-to-actions in the description.
+- **Optimizes Hooks:** Constructs sharp 2-second retention hooks for Tier-1 audiences.
+- **Pulls Campaign Hashtags:** Automatically extracts all `#hashtags` found in the brief and attaches them to scheduled social posts.
+
+When the campaign ends, click **Clear brief** to instantly return to standard, neutral clipping.
 
 ---
 
@@ -216,16 +227,16 @@ To connect YouTube Shorts:
 
 ---
 
-## 🎖️ Credits & Acknowledgements
+## 📄 License
 
-- **Autoclipper** is a modified and enhanced fork of the open-source **[PeakCut](https://github.com/haziqahmedqasmi/PeakCut)** project by Haziq Ahmed Qasmi.
-- Distributed under the terms of the [MIT License](LICENSE). Sincere gratitude to the original creator and open-source contributors.
-- Enhancements in this edition include clean production UI/UX, dual-provider automatic AI rate-limit fallback (e.g. Gemini → Groq), creator campaign briefs & custom AI prompting guidelines, in-progress clip cancellation ("Stop generating"), expanded multi-line diagnostic notifications, Meta Unified Login & Instagram Reels support via Graph API v21.0, and streamlined sidebar navigation.
+**Copyright © 2025 Saeed Ansari — Arviq Digital Solution. All Rights Reserved.**
 
----
+This software is proprietary and confidential. No part of this codebase may be copied, modified, distributed, sublicensed, or used in any form without the express written permission of the copyright owner.
 
-## 📄 License & Attribution
+- **Owner:** Saeed Ansari
+- **Company:** Arviq Digital Solution
+- **GitHub:** [github.com/javadominic](https://github.com/javadominic)
+- **LinkedIn:** [linkedin.com/in/saeed-ansari-cyber](https://www.linkedin.com/in/saeed-ansari-cyber/)
+- **Repository:** [github.com/javadominic/Aiclipper](https://github.com/javadominic/Aiclipper)
 
-- Released under the [MIT License](LICENSE).
-- Subtitle display typography (Anton, Archivo Black, Poppins) licensed under SIL Open Font License.
-- Repository: [https://github.com/javadominic/Aiclipper](https://github.com/javadominic/Aiclipper)
+Subtitle display typography (Anton, Archivo Black, Poppins) licensed under the SIL Open Font License.
