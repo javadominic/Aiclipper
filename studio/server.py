@@ -924,6 +924,27 @@ def upload_cancel(upid: str):
     return {"ok": True}
 
 
+@app.patch("/api/jobs/{jid}/clips/{cid}")
+def update_clip_meta(jid: str, cid: str, body: dict = Body(...)):
+    job = _job_or_404(jid)
+    clip = next((c for c in job["clips"] if c["id"] == cid), None)
+    if not clip:
+        raise HTTPException(404, "No such clip")
+    for k in ("title", "description", "hook"):
+        if k in body and body[k] is not None:
+            clip[k] = str(body[k]).strip()[:{"title": 100, "description": 2000, "hook": 60}[k]]
+    if "hashtags" in body and body["hashtags"] is not None:
+        raw = body["hashtags"]
+        if isinstance(raw, str):
+            tags = [t.strip().lstrip("#") for t in re.split(r"[\s,]+", raw) if t.strip()]
+        else:
+            tags = [str(t).strip().lstrip("#") for t in raw if str(t).strip()]
+        clip["hashtags"] = tags
+    jobs.save(job)
+    ctx.bump()
+    return jobs.public(job)
+
+
 @app.post("/api/jobs/{jid}/clips/{cid}/render")
 def rerender(jid: str, cid: str, body: dict = Body(...)):
     job = _job_or_404(jid)
@@ -1384,6 +1405,45 @@ def ai_fallback_test(request: Request):
         raise HTTPException(502, ai.explain(e, prov=prov, mdl=mdl) or "The fallback AI did not answer: " + _ai_error(e))
 
 
+@app.post("/api/ai/fallback2/test")
+def ai_fallback2_test(request: Request):
+    _admin(request)
+    _throttle("aitest:" + ctx.uid(), 20, 600)
+    fb2 = ai.fallback2()
+    prov = fb2.get("provider", "openai")
+    mdl = (fb2.get("models") or [""])[0]
+    try:
+        return ai.test_fallback2()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, ai.explain(e, prov=prov, mdl=mdl) or "The second backup AI did not answer: " + _ai_error(e))
+
+
+@app.put("/api/ai/fallback2")
+def ai_fallback2_put(request: Request, body: dict = Body(...)):
+    _admin(request)
+    k = body.get("key")
+    try:
+        out = ai.save_fallback2(body.get("provider"), body.get("models"), body.get("base_url") or "",
+                                None if k is None or (isinstance(k, str) and not k.strip() and not body.get("remove_key")) else str(k),
+                                keys=_kept_keys(body))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    usage.forget_all()
+    ctx.bump()
+    return out
+
+
+@app.delete("/api/ai/fallback2")
+def ai_fallback2_delete(request: Request):
+    _admin(request)
+    out = ai.remove_fallback2()
+    usage.forget_all()
+    ctx.bump()
+    return out
+
+
 # ================================================================ posting, accounts, settings
 @app.get("/api/overview")
 def overview():
@@ -1538,20 +1598,40 @@ def add_posts(body: dict = Body(...)):
     clip = next((c for c in job["clips"] if c["id"] == body.get("clip")), None) if job else None
     if not clip or clip.get("status") != "done":
         raise HTTPException(404, "That clip is not ready")
+    meta_changed = False
+    for k in ("title", "description", "hook"):
+        if k in body and body[k] is not None:
+            val = str(body[k]).strip()[:{"title": 100, "description": 2000, "hook": 60}[k]]
+            if clip.get(k) != val:
+                clip[k] = val
+                meta_changed = True
+    if "hashtags" in body and body["hashtags"] is not None:
+        raw = body["hashtags"]
+        tags = [str(t).strip().lstrip("#") for t in (re.split(r"[\s,]+", raw) if isinstance(raw, str) else raw) if str(t).strip()]
+        if clip.get("hashtags") != tags:
+            clip["hashtags"] = tags
+            meta_changed = True
+    if meta_changed:
+        jobs.save(job)
     made = posting.enqueue(job, clip, [str(a) for a in body.get("accounts", [])][:20], now=bool(body.get("now")))
     if not made:
-        raise HTTPException(400, "Nothing was queued. Pick at least one account this clip has not already gone to.")
+        has_posted = any(p["job"] == job["id"] and p["clip"] == clip["id"] and p["status"] == "posted" for p in posting._mine())
+        if has_posted:
+            raise HTTPException(400, "This clip has already been posted to that account.")
+        raise HTTPException(400, "This clip is already in the post queue. Click 'Post now' on the queue to upload it immediately.")
+    ctx.bump()
     return {"queued": len(made)}
 
 
 @app.post("/api/posts/{pid}/{action}")
 def post_action(pid: str, action: str):
     try:
-        {"cancel": posting.cancel, "retry": posting.retry}[action](pid)
+        {"cancel": posting.cancel, "retry": posting.retry, "now": posting.post_now}[action](pid)
     except KeyError:
         raise HTTPException(404)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    ctx.bump()
     return {"ok": True}
 
 

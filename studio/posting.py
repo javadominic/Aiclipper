@@ -10,6 +10,7 @@ import re
 from . import accounts, alerts, config, creators, ctx, jobs, live
 
 _lock = threading.RLock()
+_wake = threading.Event()
 _FILE = config.DATA_DIR / "posts.json"
 try:
     _posts: list = json.loads(_FILE.read_text(encoding="utf-8")) if _FILE.exists() else []
@@ -39,7 +40,7 @@ def _mirror(p):
     job = jobs.get(p["job"])
     clip = next((c for c in job["clips"] if c["id"] == p["clip"]), None) if job else None
     if clip is not None:
-        clip.setdefault("posts", {})[p["id"]] = {k: p.get(k) for k in ("account_name", "platform", "status", "url", "due_at", "error")}
+        clip.setdefault("posts", {})[p["id"]] = {"id": p["id"], **{k: p.get(k) for k in ("account_name", "platform", "status", "url", "due_at", "error")}}
         jobs.save(job)
 
 
@@ -63,9 +64,16 @@ def enqueue(job, clip, account_ids, now=False) -> list:
             acc = accounts.get(aid)
             if not acc:
                 continue
-            if any(p["job"] == job["id"] and p["clip"] == clip["id"] and p["account"] == aid
-                   and p["status"] in OPEN + ("posted",) for p in _mine()):
-                continue  # never post the same clip to the same account twice
+            existing = next((p for p in _mine() if p["job"] == job["id"] and p["clip"] == clip["id"] and p["account"] == aid
+                             and p["status"] in OPEN + ("posted",)), None)
+            if existing:
+                if existing["status"] == "posted":
+                    continue  # already posted successfully, don't duplicate
+                if now:
+                    # User clicked "Post now" for a post that was sitting scheduled (e.g. delayed to tomorrow)
+                    existing.update(status="scheduled", due_at=time.time(), tries=0, error=None)
+                    made.append(existing)
+                continue
             due = time.time() if now else _next_slot(aid, c["post_gap_min"], c["daily_cap"])
             p = {"id": secrets.token_hex(8), "user": ctx.uid(), "job": job["id"], "clip": clip["id"], "creator": job["creator"],
                  "account": aid, "account_name": acc["name"], "platform": acc["platform"], "status": "scheduled",
@@ -76,6 +84,8 @@ def enqueue(job, clip, account_ids, now=False) -> list:
         _save()
     for p in made:
         _mirror(p)
+    if now and made:
+        _wake.set()
     return made
 
 
@@ -163,7 +173,8 @@ def _post(p):
 
 def _run():
     while True:
-        time.sleep(15)
+        _wake.wait(15)
+        _wake.clear()
         due = [p for p in list(_posts) if p["status"] == "scheduled" and p["due_at"] <= time.time() and p.get("user")]
         for p in due:
             try:
@@ -225,6 +236,20 @@ def retry(pid):
         p.update(status="scheduled", due_at=time.time(), tries=0, error=None)
         _save()
     _mirror(p)
+    _wake.set()
+
+
+def post_now(pid):
+    with _lock:
+        p = next((p for p in _mine() if p["id"] == pid), None)
+        if not p:
+            raise ValueError("Post not found.")
+        if p["status"] not in ("scheduled", "failed", "cancelled"):
+            raise ValueError("Only waiting or failed posts can be posted now.")
+        p.update(status="scheduled", due_at=time.time(), tries=0, error=None)
+        _save()
+    _mirror(p)
+    _wake.set()
 
 
 def overview() -> dict:

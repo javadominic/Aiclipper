@@ -6959,7 +6959,8 @@
       return Object.values(c.posts || {}).filter(p => p.status !== "cancelled").map(p => {
         const cls = p.status === "posted" ? "ok" : p.status === "failed" ? "bad" : "warn";
         const txt = `${esc(p.account_name)} · ${p.status === "scheduled" ? clock(p.due_at) : p.status}`;
-        return p.url ? `<a class="pill ${cls}" href="${esc(p.url)}" target="_blank" rel="noopener">${txt}</a>` : `<span class="pill ${cls}" title="${esc(p.error || "")}">${txt}</span>`;
+        const nowBtn = (p.status === "scheduled" || p.status === "failed") && p.id ? ` <button type="button" class="btn sm primary" data-act="ppostnow" data-id="${esc(p.id)}" title="Post right now" style="font-size:10px;padding:1px 6px;margin-left:4px;vertical-align:middle;cursor:pointer;">Post now</button>` : "";
+        return p.url ? `<a class="pill ${cls}" href="${esc(p.url)}" target="_blank" rel="noopener">${txt}</a>` : `<span class="pill ${cls}" title="${esc(p.error || "")}">${txt}${nowBtn}</span>`;
       }).join("");
     }
     function clipHtml(j, c) {
@@ -7254,7 +7255,7 @@
         <button class="btn ${o.paused ? "primary" : ""}" data-act="pause">${ic(o.paused ? "play" : "pause")}${o.paused ? "Resume posting" : "Pause all posting"}</button></div>
       ${o.posts.length ? `<div class="scroll"><table class="stack"><tr><th>When</th><th>Clip</th><th>Creator</th><th>Account</th><th class="num">Views</th><th></th></tr>
       ${o.posts.map(p => `<tr><td data-l="Status">${pst(p)}</td><td data-l="Clip" class="c-main">${p.url ? `<a class="lnk" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}${p.error ? `<div class="err" style="margin:2px 0 0">${esc(p.error)}</div>` : ""}</td><td data-l="Creator">${esc(p.creator_name || "None")}</td><td data-l="Account">${esc(p.account_name)}</td><td data-l="Views" class="num">${p.views ?? "–"}</td>
-        <td class="c-act" style="text-align:right">${p.status === "scheduled" ? `<button class="btn sm" data-act="pcancel" data-id="${p.id}">Cancel</button>` : p.status === "failed" ? `<button class="btn sm" data-act="pretry" data-id="${p.id}">Retry</button>` : ""}</td></tr>`).join("")}</table></div>`
+        <td class="c-act" style="text-align:right">${p.status === "scheduled" ? `<button class="btn sm primary" data-act="ppostnow" data-id="${p.id}" style="margin-right:6px">Post now</button><button class="btn sm" data-act="pcancel" data-id="${p.id}">Cancel</button>` : p.status === "failed" ? `<button class="btn sm primary" data-act="ppostnow" data-id="${p.id}" style="margin-right:6px">Post now</button><button class="btn sm" data-act="pretry" data-id="${p.id}">Retry</button>` : ""}</td></tr>`).join("")}</table></div>`
           : `<p class="help">Nothing queued or posted yet.</p>`}</div>`);
     }
 
@@ -7311,17 +7312,17 @@
       ["security", "Security", "lock", "Password and signing out"]]),
       ["apps", "Connected apps", "plug", "Where your clips get posted"],
       ...(S.status.user?.is_admin ? [["storage", "Storage", "folder", "Where videos and clips are kept"]] : [])];
-    // The two AI forms (the service in use, and the backup) are the same shape, so one set of functions draws
-    // both. `p` is the id prefix: "ai_" or "ai_fb_".
-    const AI_PFX = ["ai_", "ai_fb_"];
+    // The three AI forms (the service in use, and two backups) are the same shape, so one set of functions draws
+    // all three. `p` is the id prefix: "ai_", "ai_fb_", or "ai_fb2_".
+    const AI_PFX = ["ai_", "ai_fb_", "ai_fb2_"];
     function pick(p) {
       S.pick = S.pick || {};
       return S.pick[p] || (S.pick[p] = { models: [], suggested: [], added: [], removed: [], labels: {}, why: "" });
     }
-    const savedKeys = p => (p === "ai_" ? S.ai?.keys : S.ai?.fallback_keys) || [];
-    const savedProv = p => (p === "ai_" ? S.ai?.provider : S.ai?.fallback_provider) || "";
-    const savedBase = p => (p === "ai_" ? S.ai?.base_url : S.ai?.fallback_base_url) || "";
-    const savedModels = p => (p === "ai_" ? S.ai?.models : S.ai?.fallback_models) || [];
+    const savedKeys = p => (p === "ai_" ? S.ai?.keys : p === "ai_fb_" ? S.ai?.fallback_keys : S.ai?.fallback2_keys) || [];
+    const savedProv = p => (p === "ai_" ? S.ai?.provider : p === "ai_fb_" ? S.ai?.fallback_provider : S.ai?.fallback2_provider) || "";
+    const savedBase = p => (p === "ai_" ? S.ai?.base_url : p === "ai_fb_" ? S.ai?.fallback_base_url : S.ai?.fallback2_base_url) || "";
+    const savedModels = p => (p === "ai_" ? S.ai?.models : p === "ai_fb_" ? S.ai?.fallback_models : S.ai?.fallback2_models) || [];
     const modelsOf = p => ($("#" + p + "model")?.value || "").split(",").map(s => s.trim()).filter(Boolean);
     const restWait = s => s < 5400 ? `${Math.max(1, Math.round(s / 60))} min` : `${Math.max(1, Math.round(s / 3600))} h`;
 
@@ -7427,7 +7428,7 @@
         if (tab === "ai") {
           const k = S.ai = await api("/api/ai");
           S.pick = {};
-          const nKeys = (k.keys || []).length, nFb = (k.fallback_keys || []).length;
+          const nKeys = (k.keys || []).length, nFb = (k.fallback_keys || []).length, nFb2 = (k.fallback2_keys || []).length;
           body.innerHTML = `<section class="set-sec"><h2>Primary AI</h2><p class="help">Autoclipper uses an AI model to pick the moments worth clipping and to write hooks, titles and captions. Use your own keys from any of these services. Save as many as you like: when one hits its limit the next takes over, so your clips keep coming.</p>
           <div class="ai-state">${k.ready ? `<span class="pill ok">${ic("check")}Ready</span><span class="sub">${esc(k.label)} · ${nKeys} key${nKeys === 1 ? "" : "s"} · ${k.models.length} model${k.models.length === 1 ? "" : "s"}</span>` : `<span class="pill warn">Not set up</span><span class="sub">Choose a service, paste your key and press "Find models".</span>`}${k.using ? `<span class="pill brand">${ic("bolt")}Last answered: ${esc(k.using)}</span>` : ""}</div>
           ${aiForm("ai_", { service: "AI service", keys: "Keys", models: "Models, in the order to try them" })}
@@ -7437,6 +7438,11 @@
           <div class="ai-state">${k.fallback_ready ? `<span class="pill ok">${ic("bolt")}Backup active</span><span class="sub">${esc(k.fallback_label)} · ${nFb} key${nFb === 1 ? "" : "s"} · ${esc((k.fallback_models || [])[0] || "")}</span>` : `<span class="pill warn">No backup</span><span class="sub">Optional. A second service, for example Groq, which is fast and free.</span>`}</div>
           ${aiForm("ai_fb_", { service: "Backup service", keys: "Backup keys", models: "Backup models, in the order to try them" })}
           <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave" data-p="ai_fb_">Save backup</button>${k.fallback_ready ? `<button class="btn" data-act="aitest" data-p="ai_fb_">Test backup</button><button class="btn ghost" data-act="aifbremove">Remove backup</button>` : ""}</div></section>
+
+          <section class="set-sec" style="margin-top:28px"><h2>Second Backup AI</h2><p class="help">Tried only after both the primary and first backup are exhausted. Great for adding a paid service (e.g. OpenAI GPT-4o) as a final safety net so clipping never stops.</p>
+          <div class="ai-state">${k.fallback2_ready ? `<span class="pill ok">${ic("bolt")}Second backup active</span><span class="sub">${esc(k.fallback2_label)} · ${nFb2} key${nFb2 === 1 ? "" : "s"} · ${esc((k.fallback2_models || [])[0] || "")}</span>` : `<span class="pill warn">No second backup</span><span class="sub">Optional. For example OpenAI GPT-4o-mini as a last resort.</span>`}</div>
+          ${aiForm("ai_fb2_", { service: "Second backup service", keys: "Second backup keys", models: "Second backup models, in the order to try them" })}
+          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave" data-p="ai_fb2_">Save second backup</button>${k.fallback2_ready ? `<button class="btn" data-act="aitest" data-p="ai_fb2_">Test second backup</button><button class="btn ghost" data-act="aifb2remove">Remove second backup</button>` : ""}</div></section>
 
           ${(k.execution_logs && k.execution_logs.length) ? `<section class="set-sec" style="margin-top:28px"><h3>Model Execution Audit Log</h3><p class="help">Verifies that every AI request is routed to the exact validated model ID without silent substitutions.</p>
           <div style="overflow-x:auto;font-size:12px;margin-top:10px">
@@ -7454,9 +7460,10 @@
               </tr>`).join("")}</tbody>
             </table>
           </div></section>` : ""}`;
-          aiHints("ai_"); aiHints("ai_fb_");
+          aiHints("ai_"); aiHints("ai_fb_"); aiHints("ai_fb2_");
           autoModels("ai_");                                  // the models this key may use, without being asked
           if (k.fallback_ready) autoModels("ai_fb_");
+          if (k.fallback2_ready) autoModels("ai_fb2_");
         }
         if (tab === "profile") {
           const joined = me.created_at ? new Date(me.created_at * 1000).toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" }) : "";
@@ -7645,7 +7652,10 @@
           </div>
           <input type="hidden" data-f="hashtags" id="tag_hidden" value="${esc((c.hashtags || []).join(","))}">
         </label>
-        <button class="btn" data-act="remake">${ic("scissors")}Save and re-make clip</button>
+        <div class="row" style="gap:8px;margin-top:4px;">
+          <button class="btn primary" data-act="savetext">${ic("check")}Save post text</button>
+          <button class="btn ghost" data-act="remake" title="Re-cut video with new start/end times or styles">${ic("scissors")}Re-make video</button>
+        </div>
         <h3>Post it</h3>
         <div id="dposts" class="row" style="gap:4px"></div>
         ${S.accounts.length ? `<div class="row">${S.accounts.map(a => `<label class="ck"><input type="checkbox" data-pacc value="${esc(a.id)}">${esc(a.label)} · ${esc(a.name)}</label>`).join("")}</div>
@@ -7759,7 +7769,7 @@
     document.addEventListener("drop", e => { const a = $(".composer"); if (a) { e.preventDefault(); a.classList.remove("over"); attach(e.dataTransfer.files); } });
     document.addEventListener("change", async e => {
       const t = e.target;
-      const aiPfx = t.id === "ai_provider" ? "ai_" : t.id === "ai_fb_provider" ? "ai_fb_" : "";
+      const aiPfx = t.id === "ai_provider" ? "ai_" : t.id === "ai_fb_provider" ? "ai_fb_" : t.id === "ai_fb2_provider" ? "ai_fb2_" : "";
       if (aiPfx) {
         const st = pick(aiPfx);
         st.models = []; st.suggested = []; st.why = "";
@@ -7768,7 +7778,7 @@
         aiHints(aiPfx);
         return autoModels(aiPfx);             // list what this key may use without being asked
       }
-      const keyPfx = t.id === "ai_key" ? "ai_" : t.id === "ai_fb_key" ? "ai_fb_" : "";
+      const keyPfx = t.id === "ai_key" ? "ai_" : t.id === "ai_fb_key" ? "ai_fb_" : t.id === "ai_fb2_key" ? "ai_fb2_" : "";
       if (keyPfx) return autoModels(keyPfx);  // a key pasted and left: show what it may use
       if (t.dataset.sel) {
         const k = t.dataset.sel;
@@ -7837,26 +7847,26 @@
         }
         if (a === "aiunnew") { pick(d.p).added.splice(Number(d.i), 1); return aiHints(d.p); }
         if (a === "aisave" || a === "aitest") {
-          const p = d.p, fb = p === "ai_fb_";
+          const p = d.p, fb = p === "ai_fb_", fb2 = p === "ai_fb2_";
           b.disabled = true;
           try {
             if (a === "aisave") {
               const typed = ($("#" + p + "key").value || "").trim();
               if (typed) { pick(p).added.push({ key: typed, label: "" }); $("#" + p + "key").value = ""; }
-              await send(fb ? "/api/ai/fallback" : "/api/ai", {
+              await send(fb2 ? "/api/ai/fallback2" : fb ? "/api/ai/fallback" : "/api/ai", {
                 provider: $("#" + p + "provider").value, models: $("#" + p + "model").value,
                 base_url: $("#" + p + "base").value, keys: poolOf(p)
               }, "PUT");
             }
             let ok = null, why = "";
-            try { ok = await send(fb ? "/api/ai/fallback/test" : "/api/ai/test"); } catch (err) { why = err.message; }
+            try { ok = await send(fb2 ? "/api/ai/fallback2/test" : fb ? "/api/ai/fallback/test" : "/api/ai/test"); } catch (err) { why = err.message; }
             S.status = await api("/api/status"); drawShell(); await drawSettings();
             if (ok) {
               const bad = (ok.refused || []).length;
               toast(bad ? `Saved. ${ok.models.length} answered, ${bad} did not: ${ok.refused[0].why}`
-                : `${fb ? "Backup saved" : "Saved"}. ${ok.model} answered, so the AI is ready.`, bad ? "" : "ok");
+                : `${fb2 ? "Second backup saved" : fb ? "Backup saved" : "Saved"}. ${ok.model} answered, so the AI is ready.`, bad ? "" : "ok");
             }
-            else toast(`${fb ? "Backup" : "AI"} saved, but the test failed. ${why}`, "bad");
+            else toast(`${fb2 ? "Second backup" : fb ? "Backup" : "AI"} saved, but the test failed. ${why}`, "bad");
           } finally { b.disabled = false; }
           return;
         }
@@ -7866,6 +7876,15 @@
             await send("/api/ai/fallback", {}, "DELETE");
             S.status = await api("/api/status"); drawShell(); await drawSettings();
             toast("Backup service removed.", "ok");
+          } finally { b.disabled = false; }
+          return;
+        }
+        if (a === "aifb2remove") {
+          b.disabled = true;
+          try {
+            await send("/api/ai/fallback2", {}, "DELETE");
+            S.status = await api("/api/status"); drawShell(); await drawSettings();
+            toast("Second backup service removed.", "ok");
           } finally { b.disabled = false; }
           return;
         }
@@ -7915,8 +7934,17 @@
           dlg.returnValue = "no"; return dlg.showModal();
         }
         if (a === "copy") {
-          const c = jobOf(d.j).clips.find(x => x.id === d.c);
-          await navigator.clipboard.writeText(`${c.title}\n\n${c.description}\n\n${(c.hashtags || []).map(h => "#" + h).join(" ")}`); return toast("Post text copied — title, description, and hashtags", "ok");
+          let title, desc, tags;
+          if (D.jid === d.j && D.cid === d.c && $("#clipdlg").open) {
+            title = $("#clipdlg [data-f=title]")?.value?.trim() || "";
+            desc = $("#clipdlg [data-f=description]")?.value?.trim() || "";
+            tags = ($("#tag_hidden")?.value || "").split(",").map(t => t.trim().replace(/^#+/, "")).filter(Boolean);
+          } else {
+            const c = jobOf(d.j)?.clips?.find(x => x.id === d.c);
+            title = c?.title || ""; desc = c?.description || ""; tags = c?.hashtags || [];
+          }
+          await navigator.clipboard.writeText(`${title}\n\n${desc}\n\n${tags.map(h => "#" + h).join(" ")}`.trim());
+          return toast("Post text copied — title, description, and hashtags", "ok");
         }
         if (a === "logout") { await api("/api/auth/logout", { method: "POST" }); location.href = "/"; return; }
         if (a === "pwsave") {
@@ -8064,7 +8092,13 @@
         if (a === "csave") return void await saveCreator();
         if (a === "cdiscard") { drawCreatorForm(); return toast("Changes discarded"); }
         if (a === "pause") { await send("/api/settings", { paused: !S.overview.paused }, "PUT"); return loadOverview(); }
-        if (a === "pcancel" || a === "pretry") { await api(`/api/posts/${d.id}/${a === "pcancel" ? "cancel" : "retry"}`, { method: "POST" }); return loadOverview(); }
+        if (a === "pcancel" || a === "pretry" || a === "ppostnow") {
+          const act = a === "ppostnow" ? "now" : a === "pcancel" ? "cancel" : "retry";
+          await api(`/api/posts/${d.id}/${act}`, { method: "POST" });
+          toast(a === "ppostnow" ? "Posting right now…" : a === "pcancel" ? "Post cancelled" : "Post queued", "ok");
+          await tick();
+          return loadOverview();
+        }
         if (a === "ssave") { await saveSettings(); toast("Saved", "ok"); return drawSettings(); }
         if (a === "plansave") {
           const p = {}; $$("#sform [data-plan]").forEach(i => { (p[i.dataset.plan] ??= {})[i.dataset.f] = Number(i.value); });
@@ -8075,6 +8109,15 @@
           if (!await ask("Disconnect this account?", "Posts still waiting for it will fail.", "Disconnect", true)) return;
           await api(`/api/accounts/${d.id}`, { method: "DELETE" }); await tick(); return drawSettings();
         }
+        if (a === "savetext") {
+          const body = {}; $$("#clipdlg [data-f]").forEach(i => body[i.dataset.f] = i.type === "number" ? Number(i.value) : i.value);
+          if (body.hashtags) body.hashtags = body.hashtags.split(",").map(t => t.trim().replace(/^#+/, "")).filter(Boolean);
+          await api(`/api/jobs/${D.jid}/clips/${D.cid}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          const j = jobOf(D.jid), c = j?.clips.find(x => x.id === D.cid);
+          if (c) Object.assign(c, body);
+          toast("Post text saved", "ok");
+          return render();
+        }
         if (a === "remake") {
           const body = {}; $$("#clipdlg [data-f]").forEach(i => body[i.dataset.f] = i.type === "number" ? Number(i.value) : i.value);
           if (body.hashtags) body.hashtags = body.hashtags.split(",").map(t => t.trim()).filter(Boolean);
@@ -8084,7 +8127,21 @@
           const accs = $$("#clipdlg [data-pacc]:checked").map(i => i.value);
           if (!accs.length) return toast("Tick at least one account first.", "bad");
           if (a === "postnow" && !await ask("Post now?", `This clip goes to ${accs.length} account${accs.length > 1 ? "s" : ""} straight away.`, "Post now")) return;
-          await send("/api/posts", { job: D.jid, clip: D.cid, accounts: accs, now: a === "postnow" });
+          const body = {
+            job: D.jid, clip: D.cid, accounts: accs, now: a === "postnow",
+            title: $("#clipdlg [data-f=title]")?.value?.trim(),
+            description: $("#clipdlg [data-f=description]")?.value?.trim(),
+            hook: $("#clipdlg [data-f=hook]")?.value?.trim(),
+            hashtags: ($("#tag_hidden")?.value || "").split(",").map(t => t.trim().replace(/^#+/, "")).filter(Boolean)
+          };
+          await send("/api/posts", body);
+          const j = jobOf(D.jid), c = j?.clips.find(x => x.id === D.cid);
+          if (c) {
+            if (body.title) c.title = body.title;
+            if (body.description) c.description = body.description;
+            if (body.hook) c.hook = body.hook;
+            if (body.hashtags) c.hashtags = body.hashtags;
+          }
           toast(a === "postnow" ? "Posting now" : "Added to the queue", "ok"); return tick();
         }
       } catch (err) { b.disabled = false; toast(err.message, "bad"); }

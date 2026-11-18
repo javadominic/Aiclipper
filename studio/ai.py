@@ -180,6 +180,9 @@ def all_keys() -> list:
     fb = fallback()
     if fb:
         got += [k["key"] for k in _keys_of(fb)]
+    fb2 = fallback2()
+    if fb2:
+        got += [k["key"] for k in _keys_of(fb2)]
     return [k for k in got if k]
 
 
@@ -202,7 +205,14 @@ def _public_keys(prov: str, pool: list) -> list:
     """The pool as the page may see it: a name for each key, its last four characters, and whether it is resting.
     The keys themselves never leave the server."""
     now = time.time()
-    ms = models() if prov == provider() else fallback_models()
+    if prov == provider():
+        ms = models()
+    elif prov == (fallback().get("provider") or ""):
+        ms = fallback_models()
+    elif prov == (fallback2().get("provider") or ""):
+        ms = fallback2_models()
+    else:
+        ms = []
     resting = {}
     with _state_lock:
         for (p, kid), (until, why, _lab) in list(_key_out.items()):
@@ -251,6 +261,19 @@ def public() -> dict:
                    "fallback_ready": bool(fb["provider"] in PROVIDERS and fb["models"]
                                          and (fb.get("base_url") or PROVIDERS.get(fb["provider"], ("", ""))[1])
                                          and (fb_pool or fb["provider"] in NO_KEY))}
+    fb2 = fallback2()
+    fb2_pool = _keys_of(fb2) if fb2 else []
+    fb2_info = {}
+    if fb2:
+        fb2_info = {"fallback2_provider": fb2["provider"], "fallback2_models": fb2["models"],
+                    "fallback2_base_url": fb2.get("base_url", ""),
+                    "fallback2_has_key": bool(fb2.get("key")),
+                    "fallback2_key_hint": fb2["key"][-4:] if len(fb2.get("key", "")) >= 12 else "",
+                    "fallback2_label": PROVIDERS.get(fb2["provider"], ("",))[0],
+                    "fallback2_keys": _public_keys(fb2["provider"], fb2_pool),
+                    "fallback2_ready": bool(fb2["provider"] in PROVIDERS and fb2["models"]
+                                           and (fb2.get("base_url") or PROVIDERS.get(fb2["provider"], ("", ""))[1])
+                                           and (fb2_pool or fb2["provider"] in NO_KEY))}
     return {"provider": c["provider"], "models": c["models"], "base_url": c["base_url"], "has_key": bool(c["key"]),
             "key_hint": c["key"][-4:] if len(c["key"]) >= 12 else "", "ready": ready(), "label": label(),
             "saved_here": bool(_from_dashboard().get("provider")),
@@ -264,7 +287,7 @@ def public() -> dict:
             "registry": global_registry.list_models(),
             "aliases": EXPLICIT_MODEL_ALIASES,
             "execution_logs": global_router.get_logs(limit=20),
-            **pool_status(), **fb_info}
+            **pool_status(), **fb_info, **fb2_info}
 
 
 def _clean_models(model_ids, p: str) -> list:
@@ -436,6 +459,77 @@ def remove_fallback() -> dict:
     return public()
 
 
+# ---------------------------------------------------------------- fallback2: a third service when both primary and fallback are exhausted
+
+def fallback2() -> dict:
+    """The second backup service settings, or an empty dict if none is set."""
+    d = _from_dashboard()
+    fb2 = d.get("fallback2")
+    if fb2 and isinstance(fb2, dict):
+        p = _norm(fb2.get("provider"))
+        if p in PROVIDERS:
+            pool = _keys_of(fb2)
+            return {"provider": p,
+                    "models": [str(m) for m in (fb2.get("models") or [])][:MAX_MODELS],
+                    "base_url": str(fb2.get("base_url") or "").rstrip("/"),
+                    "key": pool[0]["key"] if pool else "",
+                    "keys": pool}
+    # nothing saved from the dashboard: check .env
+    p = _norm(config.AI_FALLBACK2_PROVIDER)
+    if p in PROVIDERS:
+        ms = list(config.AI_FALLBACK2_MODELS or ([PROVIDERS[p][4]] if PROVIDERS[p][4] else []))
+        one = config.ai_fallback2_key()
+        return {"provider": p, "models": ms, "base_url": config.AI_FALLBACK2_BASE_URL.rstrip("/"),
+                "key": one, "keys": ([{"key": one, "label": ""}] if one else [])}
+    return {}
+
+
+def fallback2_ready() -> bool:
+    fb2 = fallback2()
+    if not fb2:
+        return False
+    return bool(fb2["provider"] in PROVIDERS and fb2["models"]
+                and (fb2.get("base_url") or PROVIDERS.get(fb2["provider"], ("", ""))[1])
+                and (fb2.get("keys") or fb2["provider"] in NO_KEY))
+
+
+def fallback2_label() -> str:
+    fb2 = fallback2()
+    return PROVIDERS.get(fb2.get("provider", ""), ("",))[0]
+
+
+def fallback2_models() -> list:
+    fb2 = fallback2()
+    return fb2.get("models", [])
+
+
+def save_fallback2(provider_id: str, model_ids, address: str = "", new_key=None, keys=None) -> dict:
+    """Save the second backup service. Same rules as save_fallback(), stored under a 'fallback2' key."""
+    p = _norm(provider_id)
+    if p not in PROVIDERS:
+        raise ValueError("Choose one of the AI services in the list.")
+    ms = _clean_models(model_ids, p)
+    address = _clean_address(address, p)
+    old_fb2 = fallback2()
+    same = old_fb2.get("provider") == p and bool(_from_dashboard().get("fallback2"))
+    pool = _merge_keys(keys, new_key, old_fb2.get("keys", []) if same else [])
+    if not pool and p not in NO_KEY:
+        raise ValueError("Paste the key for this service.")
+    existing = dict(_from_dashboard())
+    existing["fallback2"] = {"provider": p, "models": ms, "base_url": address,
+                             "key": pool[0]["key"] if pool else "", "keys": pool}
+    _write(existing)
+    return public()
+
+
+def remove_fallback2() -> dict:
+    """Remove the second backup service."""
+    existing = dict(_from_dashboard())
+    existing.pop("fallback2", None)
+    _write(existing)
+    return public()
+
+
 # Words that mean "this 400 is about a setting we added", so it is worth asking again without it. Any other 400
 # is about the request itself, and asking twice more would only waste what is left of the key's quota.
 _SETTING_WORDS = ("response_format", "temperature", "json_object", "json mode", "json_schema",
@@ -535,8 +629,8 @@ def test_fallback() -> dict:
         raise ValueError("Save a backup service, model and key first.")
     fb = fallback()
     worked, refused, tokens, last, out = [], [], 0, None, None
-    for cand in candidates(limit=MAX_KEYS * 2):
-        if not cand["backup"]:
+    for cand in candidates(limit=MAX_KEYS * 3):
+        if cand.get("tier") != "fallback":
             continue
         try:
             out, sent, wrote = call_candidate(cand, TINY_PROMPT, TINY_SCHEMA)
@@ -555,6 +649,35 @@ def test_fallback() -> dict:
         raise AIError((refused or [{}])[0].get("why") or explain(last, prov=fb["provider"]) or str(last))
     global_registry._save_cache()
     return {"ok": True, "provider": fb["provider"], "model": worked[0], "models": worked,
+            "tokens": tokens, "refused": refused, "answer": str(out)[:80]}
+
+
+def test_fallback2() -> dict:
+    """Ask the second backup service with a tiny request, trying each of its keys, to prove it really will take over."""
+    if not fallback2_ready():
+        raise ValueError("Save a second backup service, model and key first.")
+    fb2 = fallback2()
+    worked, refused, tokens, last, out = [], [], 0, None, None
+    for cand in candidates(limit=MAX_KEYS * 3):
+        if cand.get("tier") != "fallback2":
+            continue
+        try:
+            out, sent, wrote = call_candidate(cand, TINY_PROMPT, TINY_SCHEMA)
+            note_success(cand)
+            worked.append(describe(cand))
+            tokens += sent + wrote
+            rec = global_registry.register_manual(cand["provider"], cand["model"])
+            rec.status = STATUS_AVAILABLE
+            rec.last_verified = time.time()
+        except Exception as e:  # noqa: BLE001
+            last = e
+            note_failure(cand, e)
+            refused.append({"model": describe(cand),
+                            "why": explain(e, prov=cand["provider"], mdl=cand["model"]) or str(e)[:160]})
+    if not worked:
+        raise AIError((refused or [{}])[0].get("why") or explain(last, prov=fb2["provider"]) or str(last))
+    global_registry._save_cache()
+    return {"ok": True, "provider": fb2["provider"], "model": worked[0], "models": worked,
             "tokens": tokens, "refused": refused, "answer": str(out)[:80]}
 
 
@@ -791,7 +914,7 @@ def _primary_section() -> dict:
     if not pool or not base:
         return {}
     return {"provider": c["provider"], "label": PROVIDERS.get(c["provider"], ("",))[0] or c["provider"],
-            "models": c["models"], "base_url": base, "keys": pool, "backup": False}
+            "models": c["models"], "base_url": base, "keys": pool, "backup": False, "tier": "primary"}
 
 
 def _backup_section() -> dict:
@@ -804,7 +927,20 @@ def _backup_section() -> dict:
     if not pool or not base:
         return {}
     return {"provider": fb["provider"], "label": PROVIDERS.get(fb["provider"], ("",))[0] or fb["provider"],
-            "models": fb["models"], "base_url": base, "keys": pool, "backup": True}
+            "models": fb["models"], "base_url": base, "keys": pool, "backup": True, "tier": "fallback"}
+
+
+def _backup2_section() -> dict:
+    """The second backup service, as one entry of the ladder, or {} when there is none."""
+    fb2 = fallback2()
+    if not fb2 or not fallback2_ready():
+        return {}
+    pool = fb2.get("keys") or ([{"key": "", "label": ""}] if fb2["provider"] in NO_KEY else [])
+    base = fb2.get("base_url") or PROVIDERS.get(fb2["provider"], ("", ""))[1]
+    if not pool or not base:
+        return {}
+    return {"provider": fb2["provider"], "label": PROVIDERS.get(fb2["provider"], ("",))[0] or fb2["provider"],
+            "models": fb2["models"], "base_url": base, "keys": pool, "backup": True, "tier": "fallback2"}
 
 
 def candidates(limit: int = 24) -> list:
@@ -816,7 +952,7 @@ def candidates(limit: int = 24) -> list:
     before dropping to a weaker one keeps the clips as good as they can be. Model ids are passed on exactly as
     configured: the router may resolve a known alias, but nothing is ever fuzzy-matched."""
     out = []
-    for sec in (_primary_section(), _backup_section()):
+    for sec in (_primary_section(), _backup_section(), _backup2_section()):
         if not sec:
             continue
         for mdl in sec["models"]:
@@ -825,7 +961,7 @@ def candidates(limit: int = 24) -> list:
                     continue
                 out.append({"provider": sec["provider"], "label": sec["label"], "base_url": sec["base_url"],
                             "key": k["key"], "key_index": i, "key_label": k["label"] or f"Key {i + 1}",
-                            "model": mdl, "pool_size": len(sec["keys"]), "backup": sec["backup"]})
+                            "model": mdl, "pool_size": len(sec["keys"]), "backup": sec["backup"], "tier": sec["tier"]})
                 if len(out) >= limit:
                     return out
     return out
@@ -835,7 +971,7 @@ def all_resting() -> float:
     """How many seconds until something may be tried again, or 0 when something is available now. Lets the
     dashboard say "every key is resting, back in 4 minutes" instead of "the AI is not set up"."""
     soonest = 0.0
-    for sec in (_primary_section(), _backup_section()):
+    for sec in (_primary_section(), _backup_section(), _backup2_section()):
         if not sec:
             continue
         for mdl in sec["models"]:

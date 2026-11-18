@@ -201,6 +201,9 @@ AI_BASE_URL = env("AUTOCLIPPER_AI_BASE_URL", "").rstrip("/")                    
 AI_FALLBACK_PROVIDER = env("AUTOCLIPPER_AI_FALLBACK_PROVIDER", "").strip().lower()
 AI_FALLBACK_MODELS = [m.strip() for m in env("AUTOCLIPPER_AI_FALLBACK_MODELS", "").split(",") if m.strip()]
 AI_FALLBACK_BASE_URL = env("AUTOCLIPPER_AI_FALLBACK_BASE_URL", "").rstrip("/")
+AI_FALLBACK2_PROVIDER = env("AUTOCLIPPER_AI_FALLBACK2_PROVIDER", "").strip().lower()
+AI_FALLBACK2_MODELS = [m.strip() for m in env("AUTOCLIPPER_AI_FALLBACK2_MODELS", "").split(",") if m.strip()]
+AI_FALLBACK2_BASE_URL = env("AUTOCLIPPER_AI_FALLBACK2_BASE_URL", "").rstrip("/")
 
 
 def ai_key() -> str:
@@ -209,6 +212,10 @@ def ai_key() -> str:
 
 def ai_fallback_key() -> str:
     return _secret("AUTOCLIPPER_AI_FALLBACK_KEY", "AUTOCLIPPER_AI_FALLBACK_KEY_FILE", r"\S{8,}")
+
+
+def ai_fallback2_key() -> str:
+    return _secret("AUTOCLIPPER_AI_FALLBACK2_KEY", "AUTOCLIPPER_AI_FALLBACK2_KEY_FILE", r"\S{8,}")
 
 
 def ai_ready() -> bool:
