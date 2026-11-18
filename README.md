@@ -25,12 +25,14 @@ Simply paste any **YouTube**, **Twitch**, or **Kick** video link (or upload an M
 ## ⚡ Key Features
 
 - **Live Stream Highlight Clipper:** Connect a live stream from Twitch, Kick, or YouTube. Autoclipper records into a rolling buffer and extracts viral clips *while the creator is still streaming*.
-- **Multi-Creator Workspaces:** Manage multiple streamers and channels with independent settings, custom caption presets, and social post queues.
+- **Campaign Briefs & Custom AI Guidelines:** Upload or paste full creator briefs (e.g. Clipping Nation, Whop campaigns, or brand rules). Autoclipper tailors moment selection to what the campaign rewards, enforces mandatory CTAs and @mentions, crafts 2-second retention hooks, and auto-extracts all required campaign hashtags.
+- **In-Progress Generation Control ("Stop Generating"):** Cancel heavy video processing midway with a single click. Safely keeps and renders all clips found up to that point so you can edit and export them immediately without wasting extra AI tokens.
+- **Multi-Creator Workspaces:** Manage multiple streamers and channels with independent settings, custom caption presets, dedicated campaign briefs, and social post queues.
 - **On-Device Speech-to-Text:** Uses `sherpa-onnx` and FastConformer/Parakeet models running locally. Fast, private, and zero third-party transcription fees.
 - **Customizable AI Brain:** Plug in free Google Gemini Flash, OpenAI GPT-4o-mini, Groq Llama-3, Claude 3.5 Sonnet, or run 100% offline with Ollama.
 - **Zero-Downtime AI Auto-Fallback:** Set a backup provider (e.g. Groq) alongside your primary AI (e.g. Gemini). When rate limits or quota caps hit, Autoclipper switches instantly without interrupting your clips.
 - **Dynamic Animated Subtitles:** Word-level highlighted captions in popular styles (Bilingual, MrBeast/Hormozi style, clean minimal) powered by `ffmpeg-full` and `libass`.
-- **Direct Multi-Platform Publishing:** Built-in OAuth integration to upload directly to YouTube Shorts, Instagram Reels, and TikTok.
+- **Direct Multi-Platform Publishing:** Built-in OAuth integration to upload directly to YouTube Shorts, Instagram Reels, and TikTok with expandable, un-truncated diagnostic notifications.
 - **Zero Lock-In & Self-Hosted:** No subscription fees, no watermarks, no limits on video duration or clip quantities.
 
 ---
@@ -165,6 +167,27 @@ AUTOCLIPPER_AI_FALLBACK_KEY=your_groq_key
 
 ---
 
+### 🛑 In-Progress Clip Cancellation ("Stop Generating")
+Need to stop a long video from generating more clips without losing the work already done?
+- While a video is processing, click the **Stop generating** button on the video card (or use the API: `POST /api/jobs/{id}/stop`).
+- Autoclipper cleanly halts any further transcription chunking and AI model calls.
+- **Your work is preserved:** All clips scouted and rendered up to that second are kept completely safe, ready to preview, edit, or post.
+
+---
+
+### 🎯 Creator Campaign Briefs & Clipping Bounties
+If you clip for creator campaigns, Whop bounties, or clipping networks (like Clipping Nation):
+1. Go to **Creators → Setup** (or the creator's edit tab).
+2. Paste the full campaign brief, rules, and guidelines into the **Campaign Brief & AI Guidelines** box (or click **Upload brief** to import a `.txt` or `.md` file).
+3. Autoclipper automatically:
+   - **Targets rewarded moments:** Scans specifically for high-bounty angles (e.g. funny fails, first reactions, crazy stunts) rather than generic talk.
+   - **Enforces mandatory CTAs & Mentions:** Embeds required creator handles (e.g. `@Tomovids`) and call-to-actions in the description.
+   - **Optimizes Hooks:** Constructs sharp 2-second retention hooks for Tier-1 audiences.
+   - **Pulls Campaign Hashtags:** Automatically extracts all `#hashtags` found in the brief and attaches them to scheduled social posts.
+4. When the campaign ends, click **Clear brief** to instantly return to standard, neutral clipping.
+
+---
+
 ## 📱 Connecting YouTube Shorts & Auto-Posting
 
 To connect YouTube Shorts:
@@ -197,7 +220,7 @@ To connect YouTube Shorts:
 
 - **Autoclipper** is a modified and enhanced fork of the open-source **[PeakCut](https://github.com/haziqahmedqasmi/PeakCut)** project by Haziq Ahmed Qasmi.
 - Distributed under the terms of the [MIT License](LICENSE). Sincere gratitude to the original creator and open-source contributors.
-- Enhancements in this edition include redesigned Electric Emerald UI/UX, dual-provider automatic AI rate-limit fallback (e.g. Gemini → Groq), streamlined sidebar settings navigation, built-in interactive OAuth/FFmpeg troubleshooting guide, in-progress clip cancellation, and refreshed vector branding assets.
+- Enhancements in this edition include clean production UI/UX, dual-provider automatic AI rate-limit fallback (e.g. Gemini → Groq), creator campaign briefs & custom AI prompting guidelines, in-progress clip cancellation ("Stop generating"), expanded multi-line diagnostic notifications, Meta Unified Login & Instagram Reels support via Graph API v21.0, and streamlined sidebar navigation.
 
 ---
 

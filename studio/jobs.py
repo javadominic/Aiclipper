@@ -118,6 +118,9 @@ def clean_options(options) -> dict:
     """Only known settings, each inside its allowed range. Raises ValueError on nonsense."""
     out = {}
     for k, v in (options if isinstance(options, dict) else {}).items():
+        if k == "campaign_brief":
+            out["campaign_brief"] = str(v)[:8000].strip()  # keep raw, no limit abuse
+            continue
         if k not in DEFAULTS or v in ("", None):
             continue
         if k in LIMITS:
@@ -285,12 +288,15 @@ def create(source: dict, options: dict, enqueue=True, creator=None, kind="video"
     else:
         d, base, creator = config.user_dir(ctx.uid()) / "jobs" / jid, dict(DEFAULTS), None
     d.mkdir(parents=True)
-    opts = {**base, **clean_options(options)}
+    cleaned = clean_options(options)
+    job_brief = cleaned.pop("campaign_brief", "")   # keep off the numeric opts dict
+    opts = {**base, **{k: v for k, v in cleaned.items() if k != "campaign_brief"}}
     if opts["min_len"] >= opts["max_len"]:
         opts["min_len"] = max(5, opts["max_len"] - 5)
     job = {"id": jid, "user": ctx.uid(), "kind": kind, "creator": creator, "dir": str(d), "created": time.time(), "source": source,
            "options": opts, "status": "queued", "stage": "Waiting", "progress": 0.0,
-           "title": source.get("name", ""), "uploader": "", "duration": 0, "clips": [], "error": None, "ai": {}}
+           "title": source.get("name", ""), "uploader": "", "duration": 0, "clips": [], "error": None, "ai": {},
+           "campaign_brief": job_brief}
     with _lock:
         _jobs[jid] = job
         _by_user.setdefault(job["user"], {})[jid] = job
@@ -718,6 +724,8 @@ def _run_job(job):
         s0 = int((a - lo) / 16000)
         _cr = creators.get(job.get("creator")) if job.get("creator") else None
         _cb = _cr.get("campaign_brief", "") if _cr else ""
+        if not _cb:
+            _cb = job.get("campaign_brief", "")   # fall back to per-video brief pasted at clip time
         found, ai = brain.find_clips(bw, db[s0: s0 + int((b - a) / 16000) + 1], (b - a) / 16000, job["title"],
                                      job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, campaign_brief=_cb)
         tokens += ai.get("tokens", 0)

@@ -91,11 +91,14 @@ def on_clip_ready(job, clip):
         creators.log(c["id"], f"Queued for {len(made)} account(s): {clip.get('title') or clip.get('hook')}")
 
 
-def _tags_list(clip, creator):
+def _tags_list(clip, creator, job=None):
     clip_tags = [h if str(h).startswith("#") else "#" + str(h) for h in clip.get("hashtags", []) if h]
     camp_raw = creator.get("campaign_tags", "") if creator else ""
     camp_tags = [t if t.startswith("#") else "#" + t for t in re.split(r"[\s,]+", camp_raw) if t]
+    # brief hashtags: creator-level first, fall back to per-video brief
     brief_raw = creator.get("campaign_brief", "") if creator else ""
+    if not brief_raw and job:
+        brief_raw = job.get("campaign_brief", "")
     brief_tags = [t for t in re.findall(r"#[A-Za-z0-9_]+", brief_raw) if len(t) > 1]
     seen, combined = set(), []
     for t in (camp_tags + brief_tags + clip_tags):
@@ -106,9 +109,9 @@ def _tags_list(clip, creator):
     return combined
 
 
-def _caption(clip, creator):
-    tags = " ".join(_tags_list(clip, creator))
-    return "\n\n".join(x for x in (clip.get("description", ""), tags, creator.get("post_footer", "")) if x)
+def _caption(clip, creator, job=None):
+    tags = " ".join(_tags_list(clip, creator, job=job))
+    return "\n\n".join(x for x in (clip.get("description", ""), tags, creator.get("post_footer", "") if creator else "") if x)
 
 
 def _post(p):
@@ -122,8 +125,8 @@ def _post(p):
             raise RuntimeError("That account was disconnected.")
         path = Path(job["dir"]) / "clips" / clip["file"]
         creator = creators.get(job["creator"]) or dict(creators.DEFAULTS, name="clips")
-        title, cap = clip.get("title") or clip.get("hook") or "Clip", _caption(clip, creator)
-        all_tags = [t.lstrip("#") for t in _tags_list(clip, creator)]
+        title, cap = clip.get("title") or clip.get("hook") or "Clip", _caption(clip, creator, job=job)
+        all_tags = [t.lstrip("#") for t in _tags_list(clip, creator, job=job)]
         if acc["platform"] == "youtube":
             rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", all_tags, creator["privacy"])
         elif acc["platform"] == "instagram":

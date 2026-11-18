@@ -6646,6 +6646,14 @@
       <div class="ob"><div class="ot">Part of the video</div><div class="range">
         <label>From<input id="o_from" type="number" min="0" placeholder="start" aria-label="From minute">min</label>${ic("arrowr")}
         <label>To<input id="o_to" type="number" min="0" placeholder="end" aria-label="Up to minute">min</label></div></div>
+      <div class="ob wide"><div class="ot">Campaign brief <span style="font-weight:400;opacity:.55">(optional — paste clipping campaign rules to guide the AI)</span></div>
+        <textarea id="o_brief" rows="4" placeholder="Paste campaign guidelines here… the AI will target the right moments, write the required CTA, and pull the campaign hashtags automatically. Leave empty for normal clipping." style="width:100%;resize:vertical;background:var(--bg2,#111);color:inherit;border:1px solid var(--bd,#333);border-radius:6px;padding:8px 10px;font-size:.85rem;line-height:1.5;font-family:inherit;box-sizing:border-box"></textarea>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <button type="button" class="chip" id="briefUpBtn">${ic("up")}Upload brief</button>
+          <input type="file" id="briefFile" accept=".txt,.md" style="display:none">
+          <button type="button" class="chip" id="briefClearBtn" style="display:none">${ic("x")}Clear brief</button>
+        </div>
+      </div>
     </div></div></form>`;
       drawAtt();
     }
@@ -6715,6 +6723,8 @@
       const o = { max_clips: n("#o_max"), min_len: n("#o_min"), max_len: n("#o_maxlen"), style: $("#o_style").value, layout: $("#o_layout").value, quality: n("#o_quality") };
       if (n("#o_from") !== null) o.range_start = n("#o_from") * 60;
       if (n("#o_to") !== null) o.range_end = n("#o_to") * 60;
+      const brief = ($("#o_brief")?.value || "").trim();
+      if (brief) o.campaign_brief = brief;
       return o;
     }
     /* ---------- attachments: nothing starts until Make clips is pressed.
@@ -7730,6 +7740,20 @@
     /* ============================================================ actions */
     document.addEventListener("submit", e => { if (e.target.id === "addform") { e.preventDefault(); makeClips(); } });
     $("#file").addEventListener("change", e => { attach(e.target.files); e.target.value = ""; });
+    document.addEventListener("click", e => {
+      const briefUpBtn = e.target.closest("#briefUpBtn");
+      if (briefUpBtn) { $("#briefFile")?.click(); return; }
+      const briefClearBtn = e.target.closest("#briefClearBtn");
+      if (briefClearBtn) { const tb = $("#o_brief"); if (tb) { tb.value = ""; briefClearBtn.style.display = "none"; } return; }
+    });
+    document.addEventListener("change", e => {
+      if (e.target.id === "briefFile") {
+        const f = e.target.files[0]; if (!f) return;
+        const r = new FileReader(); r.onload = ev => { const tb = $("#o_brief"); if (tb) { tb.value = ev.target.result.trim(); const cb = $("#briefClearBtn"); if (cb) cb.style.display = ""; } }; r.readAsText(f); e.target.value = "";
+        return;
+      }
+      if (e.target.id === "o_brief") { const cb = $("#briefClearBtn"); if (cb) cb.style.display = e.target.value.trim() ? "" : "none"; return; }
+    });
     document.addEventListener("dragover", e => { const a = $(".composer"); if (a) { e.preventDefault(); a.classList.add("over"); } });
     document.addEventListener("dragleave", () => $(".composer")?.classList.remove("over"));
     document.addEventListener("drop", e => { const a = $(".composer"); if (a) { e.preventDefault(); a.classList.remove("over"); attach(e.dataTransfer.files); } });
@@ -7858,6 +7882,8 @@
         }
         if (a === "tab") return setTab(d.t);
         if (a === "pickfile") return $("#file").click();
+        if (a === "pickbrief") return $("#briefFile")?.click();
+        if (a === "clearbrief") { const tb = $("#o_brief"); if (tb) { tb.value = ""; $("#briefClearBtn") && ($("#briefClearBtn").style.display = "none"); } return; }
         if (a === "addmore") { const u = $("#url"); return u && !u.value ? (u.focus(), toast("Paste another link, or drop a file anywhere on the box.")) : $("#file").click(); }
         if (a === "closedlg") { $$("dialog").forEach(dlg => { try { if (dlg.open) dlg.close(); } catch { } }); return; }
         if (a === "openclip") return openClip(d.j, d.c);
