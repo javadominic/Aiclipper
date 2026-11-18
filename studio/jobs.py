@@ -716,8 +716,10 @@ def _run_job(job):
             continue
         quota = max(1, math.ceil(left / (len(blocks) - bi)))
         s0 = int((a - lo) / 16000)
+        _cr = creators.get(job.get("creator")) if job.get("creator") else None
+        _cb = _cr.get("campaign_brief", "") if _cr else ""
         found, ai = brain.find_clips(bw, db[s0: s0 + int((b - a) / 16000) + 1], (b - a) / 16000, job["title"],
-                                     job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append)
+                                     job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, campaign_brief=_cb)
         tokens += ai.get("tokens", 0)
         model = ai.get("model") or model
         if ai.get("note"):

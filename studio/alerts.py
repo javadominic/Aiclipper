@@ -51,7 +51,7 @@ def notify(text: str, kind: str = "live", link: str = "", body: str = ""):
         pass
     if configured():
         ext_text = f"{title}: {body}" if body else title
-        threading.Thread(target=ctx.bind(send), args=("PeakCut: " + ext_text,), daemon=True).start()
+        threading.Thread(target=ctx.bind(send), args=("Autoclipper: " + ext_text,), daemon=True).start()
 
 
 def digest_loop(make_summary):

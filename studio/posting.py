@@ -95,8 +95,10 @@ def _tags_list(clip, creator):
     clip_tags = [h if str(h).startswith("#") else "#" + str(h) for h in clip.get("hashtags", []) if h]
     camp_raw = creator.get("campaign_tags", "") if creator else ""
     camp_tags = [t if t.startswith("#") else "#" + t for t in re.split(r"[\s,]+", camp_raw) if t]
+    brief_raw = creator.get("campaign_brief", "") if creator else ""
+    brief_tags = [t for t in re.findall(r"#[A-Za-z0-9_]+", brief_raw) if len(t) > 1]
     seen, combined = set(), []
-    for t in (camp_tags + clip_tags):
+    for t in (camp_tags + brief_tags + clip_tags):
         k = t.lower()
         if k not in seen:
             seen.add(k)

@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PeakCut</title>
+  <title>Autoclipper</title>
   <link rel="icon" type="image/svg+xml" href="/brand/favicon.svg?v=25">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -6010,7 +6010,7 @@
   <div class="app" id="app">
     <aside class="side" aria-label="Sidebar">
       <div class="side-head">
-        <div class="brand-badge" data-act="go" data-v="overview" title="PeakCut">
+        <div class="brand-badge" data-act="go" data-v="overview" title="Autoclipper">
           <span class="brand-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 19L11 5L15 13L18 8L21 19H4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
@@ -6018,7 +6018,7 @@
             </svg>
           </span>
           <div class="brand-text">
-            <span class="brand-name">PeakCut</span>
+            <span class="brand-name">Autoclipper</span>
             <span class="brand-sub">STUDIO</span>
           </div>
         </div>
@@ -7152,6 +7152,24 @@
         <label class="f">Campaign pay per 1,000 views ($)<input data-k="rate_per_1k" type="number" step="0.1" min="0" value="${c.rate_per_1k}"></label>
         <label class="f span">Line added to every post (credit, campaign tag)<input data-k="post_footer" value="${esc(c.post_footer)}" placeholder="Clipped from @streamer"></label>
         <label class="f span">Campaign hashtags added to every post (e.g. for Vyro campaigns)<input data-k="campaign_tags" value="${esc(c.campaign_tags || '')}" placeholder="#vyropartner #Shorts #viral"></label></div></div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div>
+          <h2>Campaign Brief & AI Guidelines</h2>
+          <p class="help">Paste bounty rules, Discord briefs, or campaign guidelines (e.g. Clipping Nation, Whop). The AI reads this to pick the right moments, write matching hooks, titles, captions, and follow all required CTAs and mentions.</p>
+        </div>
+        <div class="row" style="gap:6px">
+          <input type="file" id="brief_file" accept=".txt,.md" hidden>
+          <button class="btn sm ghost" data-act="uploadbrief" type="button" title="Upload a .txt or .md brief file">${ic("up")}Upload brief</button>
+          ${c.campaign_brief ? `<button class="btn sm ghost danger" data-act="clearbrief" type="button" style="color:var(--bad)" title="Remove this campaign brief">Clear</button>` : ""}
+        </div>
+      </div>
+      <div class="fields">
+        <label class="f span" style="grid-column:1/-1">
+          <textarea data-k="campaign_brief" id="campaign_brief_input" rows="8" style="font-family:inherit;font-size:13px;line-height:1.5;padding:12px;border-radius:8px;border:1px solid var(--line);background:var(--muted);width:100%;resize:vertical;color:var(--text)" placeholder="Paste the campaign brief, rules, required CTAs (e.g. 'subscribe to Tomo on YouTube'), required mentions (@Tomovids), and what moments to look for...">${esc(c.campaign_brief || "")}</textarea>
+        </label>
+      </div>
+    </div>
     <div class="card danger-card"><h2>Delete this creator</h2><p class="help">Removes ${esc(c.name)}, their settings and every video and clip filed under them. This cannot be undone.</p>
       <button class="btn danger" data-act="delcreator">${ic("trash")}Delete creator</button></div>
     <div class="savebar" id="savebar"><span>${ic("warn")}You have unsaved changes</span><button class="btn ghost" data-act="cdiscard">Discard</button><button class="btn primary" data-act="csave">${ic("check")}Save changes</button></div>`;
@@ -7919,7 +7937,7 @@
           location.href = "/"; return;
         }
         if (a === "stopjob") {
-          if (!await ask("Stop generating clips?", "PeakCut will finish any clip currently being rendered and stop scanning for more clips. All clips found so far stay ready to edit and post.", "Stop generating", false)) return;
+          if (!await ask("Stop generating clips?", "Autoclipper will finish any clip currently being rendered and stop scanning for more clips. All clips found so far stay ready to edit and post.", "Stop generating", false)) return;
           await api(`/api/jobs/${d.j}/stop`, { method: "POST" }); toast("Stopping generation — keeping current clips", "ok"); return tick();
         }
         if (a === "deljob") {
@@ -7995,6 +8013,28 @@
         if (a === "acctmenu") return openAcct();
         if (a === "bellread") { await markRead(); return openBell().then(openBell); }
         if (a === "ntgo") { closePops(); const l = d.link || ""; if (l.startsWith("/app")) { const [v, tab] = fromPath(l); return go(v, tab); } if (l.startsWith("/")) location.href = l; return; }
+        if (a === "clearbrief") {
+          const ta = $("#campaign_brief_input");
+          if (ta) { ta.value = ""; dirty(true); toast("Campaign brief cleared. Press Save changes to apply.", "ok"); }
+          return;
+        }
+        if (a === "uploadbrief") {
+          const fi = $("#brief_file");
+          if (fi) {
+            fi.onchange = e => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = evt => {
+                const ta = $("#campaign_brief_input");
+                if (ta) { ta.value = evt.target.result; dirty(true); toast(`Loaded ${file.name}. Press Save changes to apply.`, "ok"); }
+              };
+              reader.readAsText(file);
+            };
+            fi.click();
+          }
+          return;
+        }
         if (a === "csave") return void await saveCreator();
         if (a === "cdiscard") { drawCreatorForm(); return toast("Changes discarded"); }
         if (a === "pause") { await send("/api/settings", { paused: !S.overview.paused }, "PUT"); return loadOverview(); }
