@@ -565,6 +565,8 @@ def _run_job(job):
             raise RuntimeError("This link is a live stream, so it would never finish downloading. Open the creator, "
                                "put this link under Setup, and press Start recording instead.")
         _set(job, title=meta["title"], uploader=meta["uploader"], duration=meta["duration"])
+        if meta.get("lang") and not job.get("lang"):
+            job["lang"] = meta["lang"]           # YouTube's own guess at the spoken language, used until something more exact (its captions) is found
         if not job.get("thumb") and media.save_thumb(d, url=src["url"]):
             _set(job, thumb=True)
         usage.set_context(job["creator"], meta["title"])
@@ -589,6 +591,8 @@ def _run_job(job):
         audio_file.unlink(missing_ok=True)
     if not job["duration"]:
         job["duration"] = len(audio) / 16000
+    if not job.get("lang") and transcribe.multi_model_ready():
+        job["lang"] = media.detect_lang_from_audio(audio) or job.get("lang", "")
     lo = int((o["range_start"] or 0) * 16000)
     hi = min(len(audio), int(o["range_end"] * 16000)) if o["range_end"] else len(audio)
     span = (hi - lo) / 16000
@@ -632,7 +636,8 @@ def _run_job(job):
             # run on just this clip: full punctuation, nothing blanked out, timings to the word.
             a0, b0 = max(lo, int((clip["start"] - 1.5) * 16000)), min(hi, int((clip["end"] + 1.5) * 16000))
             try:
-                tw = [dict(w, s=round(w["s"] + a0 / 16000, 2), e=round(w["e"] + a0 / 16000, 2)) for w in transcribe.transcribe(audio[a0:b0])]
+                tw = [dict(w, s=round(w["s"] + a0 / 16000, 2), e=round(w["e"] + a0 / 16000, 2))
+                      for w in transcribe.transcribe(audio[a0:b0], lang=job.get("lang", ""))]
             except Exception:  # noqa: BLE001 - the clip is still made, with YouTube's words
                 tw = []
             if len(tw) >= 3:
@@ -689,7 +694,7 @@ def _run_job(job):
                 if now_on[0] == i and p - last[0] > 0.05:      # only the part being shown moves the bar
                     last[0] = p
                     _set(job, progress=max(job["progress"], 0.14 + 0.78 * ((a_ - lo) + p * (b_ - a_)) / max(1, hi - lo)))
-            heard[i] = ahead.submit(ctx.bind(transcribe.transcribe), audio[a_:b_], tp)
+            heard[i] = ahead.submit(ctx.bind(transcribe.transcribe), audio[a_:b_], tp, job.get("lang", ""))
 
     for bi, (a, b) in enumerate(blocks):
         if job.get("stop_requested"):
