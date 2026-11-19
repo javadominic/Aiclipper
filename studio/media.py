@@ -122,7 +122,19 @@ def info(url: str) -> dict:
         i = ydl.extract_info(url, download=False)
     return {"title": i.get("title") or "", "uploader": i.get("uploader") or i.get("channel") or "",
             "duration": float(i.get("duration") or 0), "is_live": bool(i.get("is_live")),
-            "thumbnail": i.get("thumbnail") or "", "kind": i.get("_type") or "video"}
+            "thumbnail": i.get("thumbnail") or "", "kind": i.get("_type") or "video",
+            "lang": (i.get("language") or "").split("-")[0].lower()}  # best guess at the spoken language, if YouTube says
+
+
+def detect_lang_from_audio(audio, seconds=20) -> str:
+    """A rough spoken-language guess from the first bit of audio, used only when nothing else says what
+    language a video is in (no YouTube language, no captions). Needs the multilingual model's own language
+    detection; if that is not available, "" is returned and the caller keeps using the English model as before."""
+    try:
+        from . import transcribe
+        return transcribe.detect_lang(audio[: seconds * 16000])
+    except Exception:  # noqa: BLE001 - detection is a convenience, never a hard requirement
+        return ""
 
 
 def youtube_words(url: str):
