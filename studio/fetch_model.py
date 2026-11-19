@@ -10,65 +10,104 @@ import urllib.request
 
 from . import config
 
-URL = f"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/{config.ASR_MODEL_NAME}.tar.bz2"
 _lock = threading.Lock()
 state = {"doing": False, "percent": 0, "error": ""}
+# Each model is checked and fetched the same way, just a different name, folder and release asset.
+_MULTI_LOCK = threading.Lock()
+multi_state = {"doing": False, "percent": 0, "error": ""}
+
+
+def _url(name: str) -> str:
+    return f"https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/{name}.tar.bz2"
 
 
 def ready() -> bool:
     """Is the whole model there: the word list and all three parts?"""
-    d = config.ASR_MODEL_DIR
+    return _model_ready(config.ASR_MODEL_DIR)
+
+
+def multi_ready() -> bool:
+    """Is the multilingual (Whisper) model there: its encoder, decoder and token list?"""
+    d = config.ASR_MULTI_MODEL_DIR
+    if not (d / "tokens.txt").is_file():
+        return False
+    return any(d.glob("*encoder*.onnx")) and any(d.glob("*decoder*.onnx"))
+
+
+def _model_ready(d) -> bool:
     if not (d / "tokens.txt").is_file():
         return False
     return all(any(d.glob(f"{part}*.onnx")) for part in ("encoder", "decoder", "joiner"))
 
 
-def _progress(blocks, size, total):
+def _progress(blocks, size, total, into: dict):
     if total > 0:
-        state["percent"] = min(99, int(blocks * size * 100 / total))
+        into["percent"] = min(99, int(blocks * size * 100 / total))
 
 
-def ensure() -> None:
-    """Make sure the model is on this computer, downloading it if it is not. One download at a time: anything else
-    that needs the model meanwhile waits for it here."""
-    if ready():
-        return
-    with _lock:
-        if ready():
-            return
-        state.update(doing=True, percent=0, error="")
-        print("\n  Downloading the speech model (one time, about 480 MB)...\n", flush=True)
+def _fetch(name: str, dest, lock, into: dict, label: str) -> None:
+    """Download and unpack one model by its release name into `dest`, the same way for any of them."""
+    with lock:
+        into.update(doing=True, percent=0, error="")
+        print(f"\n  Downloading the {label} (one time)...\n", flush=True)
         config.MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        tmp, part = config.MODELS_DIR / "speech-model.tar.bz2", config.MODELS_DIR / "speech-model.unpacking"
+        tmp = config.MODELS_DIR / f"{name}.tar.bz2"
+        part = config.MODELS_DIR / f"{name}.unpacking"
         try:
-            urllib.request.urlretrieve(URL, tmp, _progress)
+            urllib.request.urlretrieve(_url(name), tmp, lambda b, s, t: _progress(b, s, t, into))
             shutil.rmtree(part, ignore_errors=True)
             part.mkdir()
             with tarfile.open(tmp, "r:bz2") as t:
                 for m in t.getmembers():  # only plain files and folders that stay inside the unpacking folder
                     if (m.isfile() or m.isdir()) and not m.name.startswith(("/", "..")) and ".." not in m.name.split("/"):
                         t.extract(m, part)
-            got = part / config.ASR_MODEL_NAME
+            got = part / name
             if not got.is_dir():
                 raise OSError("the download did not contain the model")
-            shutil.rmtree(config.ASR_MODEL_DIR, ignore_errors=True)        # a half-finished one from before
-            got.rename(config.ASR_MODEL_DIR)
-            print("  Speech model ready.\n", flush=True)
+            shutil.rmtree(dest, ignore_errors=True)        # a half-finished one from before
+            got.rename(dest)
+            print(f"  {label.capitalize()} ready.\n", flush=True)
         except Exception as e:  # noqa: BLE001
-            state["error"] = str(e)[-200:]
-            raise RuntimeError("Autoclipper couldn't download its speech model (about 480 MB, needed once). Check the "
-                               "internet connection and free disk space, then try again.") from e
+            into["error"] = str(e)[-200:]
+            raise RuntimeError(f"Autoclipper couldn't download its {label}. Check the internet connection and "
+                               "free disk space, then try again.") from e
         finally:
-            state["doing"] = False
+            into["doing"] = False
             tmp.unlink(missing_ok=True)
             shutil.rmtree(part, ignore_errors=True)
+
+
+def ensure() -> None:
+    """Make sure the (English) speech model is on this computer, downloading it if it is not."""
+    if ready():
+        return
+    with _lock:
+        if ready():
+            return
+    _fetch(config.ASR_MODEL_NAME, config.ASR_MODEL_DIR, _lock, state, "speech model (about 480 MB)")
+
+
+def ensure_multi() -> None:
+    """Make sure the multilingual speech model is on this computer. Only downloaded the first time a
+    non-English video needs it, so an English-only setup never pays for it."""
+    if multi_ready():
+        return
+    with _MULTI_LOCK:
+        if multi_ready():
+            return
+    _fetch(config.ASR_MULTI_MODEL_NAME, config.ASR_MULTI_MODEL_DIR, _MULTI_LOCK, multi_state,
+          "multilingual speech model (for Hindi, Urdu and other languages)")
 
 
 def main():
     if ready():
         print("Speech model already present.")
-        return
-    ensure()
+    else:
+        ensure()
+    if multi_ready():
+        print("Multilingual speech model already present.")
+    else:
+        ensure_multi()
 
 
 if __name__ == "__main__":
