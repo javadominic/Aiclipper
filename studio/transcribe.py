@@ -46,6 +46,23 @@ def multi_model_ready() -> bool:
     return fetch_model.multi_ready()
 
 
+def detect_lang(audio: np.ndarray) -> str:
+    """A best-effort spoken-language guess (e.g. "hi") from a short clip of audio, using Whisper's own
+    language detector. Returns "" if the multilingual model is not set up or detection is unsupported,
+    so callers fall back to whatever they already know (or to the English model)."""
+    if len(audio) < 16000:
+        return ""
+    try:
+        rec = _multi_recognizer()
+        st = rec.create_stream()
+        st.accept_waveform(16000, audio.astype(np.float32) / 32768.0)
+        rec.decode_stream(st)
+        lang = getattr(st.result, "lang", "") or ""
+        return lang.strip().lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _model_files(d) -> dict:
     """The model's three parts. A graphics card wants the full-precision files; processors the compact ones."""
     kinds = ("fp16", "", "int8") if PROVIDER != "cpu" else ("int8", "", "fp16")
