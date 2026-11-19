@@ -40,6 +40,12 @@ def model_ready() -> bool:
     return fetch_model.ready()
 
 
+def multi_model_ready() -> bool:
+    """Is the multilingual (Whisper) speech model present, for Hindi, Urdu and other non-English videos?"""
+    from . import fetch_model
+    return fetch_model.multi_ready()
+
+
 def _model_files(d) -> dict:
     """The model's three parts. A graphics card wants the full-precision files; processors the compact ones."""
     kinds = ("fp16", "", "int8") if PROVIDER != "cpu" else ("int8", "", "fp16")
@@ -48,6 +54,16 @@ def _model_files(d) -> dict:
         if all(f.is_file() for f in names.values()):
             return {p: str(f) for p, f in names.items()}
     raise FileNotFoundError(f"No speech model files in {d}")
+
+
+def _whisper_files(d) -> dict:
+    """Whisper's two parts (encoder, decoder), compact build first."""
+    for enc in sorted(d.glob("*encoder*.int8.onnx")) + sorted(d.glob("*encoder*.onnx")):
+        tag = enc.name.split("encoder")[0]
+        dec = next(iter(sorted(d.glob(f"{tag}decoder*.int8.onnx")) or sorted(d.glob(f"{tag}decoder*.onnx"))), None)
+        if dec:
+            return {"encoder": str(enc), "decoder": str(dec)}
+    raise FileNotFoundError(f"No Whisper model files in {d}")
 
 
 def _new():
@@ -65,6 +81,36 @@ def _new():
         model_type="nemo_transducer",
         provider=PROVIDER,
     )
+
+
+_multi_lock = threading.Lock()
+_multi_rec = None
+
+
+def _new_multi():
+    """A multilingual (Whisper) recognizer: Hindi, Urdu and 90+ other languages. Built once and reused: it is
+    only asked for when a video's language is not English, which is uncommon enough that one copy is plenty."""
+    import sherpa_onnx
+    from . import fetch_model
+    fetch_model.ensure_multi()
+    d = config.ASR_MULTI_MODEL_DIR
+    return sherpa_onnx.OfflineRecognizer.from_whisper(
+        **_whisper_files(d),
+        tokens=str(d / "tokens.txt"),
+        num_threads=THREADS,
+        decoding_method="greedy_search",
+        provider=PROVIDER,
+    )
+
+
+def _multi_recognizer():
+    """One shared copy of the multilingual model, made the first time it is needed."""
+    global _multi_rec
+    if _multi_rec is None:
+        with _multi_lock:
+            if _multi_rec is None:
+                _multi_rec = _new_multi()
+    return _multi_rec
 
 
 def _take():
@@ -198,10 +244,31 @@ def _decode_remote(pieces: list) -> list:
     return [(p["tokens"], p["timestamps"]) for p in got]
 
 
-def transcribe(audio: np.ndarray, on_progress=None) -> list:
+def _decode_multi(pieces: list) -> list:
+    """[(tokens, timestamps), ...] for float32 pieces of audio, using the shared multilingual model.
+    Whisper in sherpa-onnx does not hand back per-word timestamps the way the transducer does, so each
+    piece's words are spread evenly across the piece: good enough for caption snapping on non-English audio."""
+    rec = _multi_recognizer()
+    out = []
+    for seg in pieces:
+        st = rec.create_stream()
+        st.accept_waveform(16000, seg)
+        rec.decode_stream(st)
+        text = (st.result.text or "").strip()
+        toks = text.split()
+        n = len(seg) / 16000.0
+        step = n / max(1, len(toks))
+        out.append((toks, [round(i * step, 2) for i in range(len(toks))]))
+    return out
+
+
+def transcribe(audio: np.ndarray, on_progress=None, lang: str = "") -> list:
     """Returns [{'w': word, 's': start_sec, 'e': end_sec}, ...] for the whole audio.
-    Speech is cut at quiet moments into 12-24 s pieces; silent pieces are skipped."""
+    Speech is cut at quiet moments into 12-24 s pieces; silent pieces are skipped.
+    `lang` is the spoken language if already known (e.g. from YouTube metadata): anything other than English
+    is sent to the multilingual model instead of the English-only one."""
     global _remote_down_until
+    multi = bool(lang) and lang.lower() not in config.ASR_ENGLISH_LANGS
     words = []
     todo = []
     for a, b in _chunks(audio):
@@ -217,6 +284,13 @@ def transcribe(audio: np.ndarray, on_progress=None) -> list:
     def decode(group):
         global _remote_down_until
         segs = [seg for _, _, seg in group]
+        if multi:                      # non-English: always the multilingual model, no remote card involved
+            got = _decode_multi(segs)
+            out = [_words(tok, ts, a, b) for (a, b, _), (tok, ts) in zip(group, got)]
+            done[0] += 1
+            if on_progress:
+                on_progress(done[0] / len(groups))
+            return out
         got = None
         while got is None:
             # whichever is free first: a place on the card's machine, or a copy of the model on this one
