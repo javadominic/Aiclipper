@@ -139,6 +139,12 @@ YT_TRANSCRIPT = env("AUTOCLIPPER_YT_TRANSCRIPT", "1") != "0"
 # the compact model for processors; a machine with a graphics card sets AUTOCLIPPER_ASR_MODEL to the full-precision one
 ASR_MODEL_NAME = env("AUTOCLIPPER_ASR_MODEL", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")
 ASR_MODEL_DIR = MODELS_DIR / ASR_MODEL_NAME
+# A second, multilingual model (Hindi, Urdu and 90+ other languages), used only for videos whose spoken
+# language is not English: Parakeet above is English-only. Downloaded once, the same way, only when first needed.
+ASR_MULTI_MODEL_NAME = env("AUTOCLIPPER_ASR_MULTI_MODEL", "sherpa-onnx-whisper-small")
+ASR_MULTI_MODEL_DIR = MODELS_DIR / ASR_MULTI_MODEL_NAME
+# Languages the English-only model (Parakeet) can be trusted with; anything else uses the multilingual model.
+ASR_ENGLISH_LANGS = ("en",)
 DATABASE_URL = env("DATABASE_URL") or f"sqlite:///{(DATA_DIR / 'autoclipper.db').as_posix()}"
 
 for d in (USERS_DIR, MODELS_DIR, TMP_DIR, FONTS_DIR):
