@@ -6633,8 +6633,8 @@
       <button class="btn primary" id="goBtn">${ic("scissors")}Make clips</button>
     </div>
     <div class="composer-opts" inert><div class="og">
-      <div class="ob wide"><div class="ot">Clips</div><div class="nsteps">
-        ${stepper("o_max", "How many", c?.max_clips ?? 6, 1, 20, 1, "")}
+      <div class="ob wide"><div class="ot">Clips <span style="font-weight:400;opacity:.55">(Auto scans whole video and picks all worthy moments)</span></div><div class="nsteps">
+        ${stepper("o_max", "How many", c?.max_clips ?? 0, 0, 30, 1, "")}
         ${stepper("o_min", "Shortest", c?.min_len ?? 15, 5, 120, 5, "s")}
         ${stepper("o_maxlen", "Longest", c?.max_len ?? 60, 10, 180, 5, "s")}
       </div></div>
@@ -6647,7 +6647,7 @@
         <label>From<input id="o_from" type="number" min="0" placeholder="start" aria-label="From minute">min</label>${ic("arrowr")}
         <label>To<input id="o_to" type="number" min="0" placeholder="end" aria-label="Up to minute">min</label></div></div>
       <div class="ob wide"><div class="ot">Campaign brief <span style="font-weight:400;opacity:.55">(optional — paste clipping campaign rules to guide the AI)</span></div>
-        <textarea id="o_brief" rows="4" placeholder="Paste campaign guidelines here… the AI will target the right moments, write the required CTA, and pull the campaign hashtags automatically. Leave empty for normal clipping." style="width:100%;resize:vertical;background:var(--bg2,#111);color:inherit;border:1px solid var(--bd,#333);border-radius:6px;padding:8px 10px;font-size:.85rem;line-height:1.5;font-family:inherit;box-sizing:border-box"></textarea>
+        <textarea id="o_brief" rows="4" placeholder="Paste campaign guidelines here… the AI will target the right moments, write the required CTA, and pull the campaign hashtags automatically. Leave empty for normal clipping." style="width:100%;resize:vertical;background:var(--muted,#f8fafc);color:var(--text,#0f172a);border:1px solid var(--line,#e2e8f0);border-radius:6px;padding:8px 10px;font-size:.85rem;line-height:1.5;font-family:inherit;box-sizing:border-box"></textarea>
         <div style="display:flex;gap:8px;margin-top:6px">
           <button type="button" class="chip" id="briefUpBtn">${ic("up")}Upload brief</button>
           <input type="file" id="briefFile" accept=".txt,.md" style="display:none">
@@ -6672,9 +6672,12 @@
     <div class="pick-menu" role="listbox">${items.map(x => `<button type="button" class="pick-opt" role="option" data-v="${esc(x.v)}" aria-selected="${String(x.v) === String(cur.v)}">${av(x)}<span class="pl">${esc(x.label)}</span>${ic("check").replace("<svg", '<svg class="tick"')}</button>`).join("")}${id === "o_creator" ? `${items.length < 2 ? `<p class="pick-empty">No creators yet. Add one to keep each streamer's clips, settings and accounts together.</p>` : ""}<button type="button" class="pick-new" data-act="newcreator"><span class="av">${ic("plus")}</span>New creator</button>` : ""}</div></div>`;
     }
     function stepper(id, label, val, min, max, step, unit) {
+      const isAuto = id === "o_max" && (val === 0 || val === "0" || val === "Auto");
+      const disp = isAuto ? "Auto" : val;
+      const unitLabel = unit ? `<i>${unit}</i>` : (id === "o_max" ? `<i style="font-size:11px;font-style:normal;opacity:.65" title="0 / Auto scans the whole video and extracts all worthy moments">${isAuto ? "all" : "clips"}</i>` : "");
       return `<div class="nstep"><span>${esc(label)}</span><div class="ctl">
     <button type="button" data-step="${id}" data-d="-1" aria-label="Less">${ic("minus")}</button>
-    <input id="${id}" type="number" min="${min}" max="${max}" step="${step}" value="${esc(val)}" aria-label="${esc(label)}">${unit ? `<i>${unit}</i>` : ""}
+    <input id="${id}" type="${id === "o_max" ? "text" : "number"}" min="${min}" max="${max}" step="${step}" value="${esc(disp)}" aria-label="${esc(label)}">${unitLabel}
     <button type="button" data-step="${id}" data-d="1" aria-label="More">${ic("plus")}</button></div></div>`;
     }
     function choice(id, items, val) {
@@ -6705,7 +6708,15 @@
       const st = e.target.closest("[data-step]");
       if (st) {
         const i = $("#" + st.dataset.step), s = Number(i.step) || 1, d = Number(st.dataset.d);
-        const v = Math.min(Number(i.max), Math.max(Number(i.min), (Number(i.value) || 0) + d * s)); i.value = v;
+        let cur = (i.id === "o_max" && (i.value === "Auto" || i.value === "0" || i.value === "")) ? 0 : (Number(i.value) || 0);
+        const next = Math.min(Number(i.max), Math.max(Number(i.min), cur + d * s));
+        if (i.id === "o_max") {
+          i.value = next === 0 ? "Auto" : next;
+          const unitEl = i.parentElement.querySelector("i");
+          if (unitEl) unitEl.textContent = next === 0 ? "all" : "clips";
+        } else {
+          i.value = next;
+        }
       }
     });
     document.addEventListener("keydown", e => {
@@ -6719,7 +6730,13 @@
     });
     const targetCreator = () => creatorId() || $("#o_creator")?.value || "";
     function jobOptions() {
-      const n = id => { const v = $(id).value; return v === "" ? null : Number(v); };
+      const n = id => {
+        const el = $(id);
+        if (!el) return null;
+        const v = el.value;
+        if (id === "#o_max" && (v === "Auto" || v === "0" || v === "")) return 0;
+        return v === "" ? null : Number(v);
+      };
       const o = { max_clips: n("#o_max"), min_len: n("#o_min"), max_len: n("#o_maxlen"), style: $("#o_style").value, layout: $("#o_layout").value, quality: n("#o_quality") };
       if (n("#o_from") !== null) o.range_start = n("#o_from") * 60;
       if (n("#o_to") !== null) o.range_end = n("#o_to") * 60;

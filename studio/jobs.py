@@ -111,7 +111,7 @@ DEFAULTS = {"max_clips": 6, "min_len": 15, "max_len": 60, "style": "bounce", "la
             "range_start": None, "range_end": None}
 
 
-LIMITS = {"max_clips": (1, 20), "min_len": (5, 120), "max_len": (10, 180), "quality": (360, 1080)}
+LIMITS = {"max_clips": (0, 50), "min_len": (5, 120), "max_len": (10, 180), "quality": (360, 1080)}
 
 
 def clean_options(options) -> dict:
@@ -720,12 +720,21 @@ def _run_job(job):
             notes.append("Generation stopped by user.")
             break
         _set(job, stage="Finding the best moments" + where, word_count=len(words))
-        left = int(o["max_clips"]) - len(job["clips"])
-        if left <= 0 or len(bw) < 8:
-            job["done_blocks"] = bi + 1
-            save(job)
-            continue
-        quota = max(1, math.ceil(left / (len(blocks) - bi)))
+        max_c = int(o.get("max_clips", 0))
+        if max_c > 0:
+            left = max_c - len(job["clips"])
+            if left <= 0 or len(bw) < 8:
+                job["done_blocks"] = bi + 1
+                save(job)
+                continue
+            quota = max(1, math.ceil(left / (len(blocks) - bi)))
+        else:
+            # Auto (0): scan the whole video and let AI pick all quality moments without rationing
+            if len(bw) < 8:
+                job["done_blocks"] = bi + 1
+                save(job)
+                continue
+            quota = 0
         s0 = int((a - lo) / 16000)
         _cr = creators.get(job.get("creator")) if job.get("creator") else None
         cr_name = (_cr.get("name") if _cr else "") or job.get("uploader", "")
