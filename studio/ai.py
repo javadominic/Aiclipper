@@ -536,7 +536,8 @@ def remove_fallback2() -> dict:
 # is about the request itself, and asking twice more would only waste what is left of the key's quota.
 _SETTING_WORDS = ("response_format", "temperature", "json_object", "json mode", "json_schema",
                   "unsupported parameter", "unknown parameter", "not supported", "unsupported value",
-                  "failed to generate json", "failed_generation")
+                  "failed to generate json", "failed_generation", "responsemimetype", "responseschema",
+                  "json mode is not enabled")
 
 
 def _about_settings(text: str) -> bool:
@@ -553,9 +554,22 @@ def _call_as(prov: str, mdl: str, url: str, k: str, prompt: str, schema: dict):
     answer are a contract: do not change them."""
     how = PROVIDERS[prov][2]
     if how == "gemini":
-        body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json", "responseSchema": schema}}
-        r = httpx.post(f"{url}/{mdl}:generateContent", json=body, headers={"x-goog-api-key": k}, timeout=120)
+        configs = [
+            {"generationConfig": {"temperature": 0.4, "responseMimeType": "application/json", "responseSchema": schema}, "prompt": prompt},
+            {"generationConfig": {"temperature": 0.4, "responseMimeType": "application/json"}, "prompt": _wrapped(prompt, schema)},
+            {"generationConfig": {"temperature": 0.4}, "prompt": _wrapped(prompt, schema)},
+        ]
+        r = None
+        for cfg in configs:
+            body = {"contents": [{"role": "user", "parts": [{"text": cfg["prompt"]}]}],
+                    "generationConfig": cfg["generationConfig"]}
+            r = httpx.post(f"{url}/{mdl}:generateContent", json=body, headers={"x-goog-api-key": k}, timeout=120)
+            if r.status_code == 200:
+                break
+            low = r.text.lower()
+            if r.status_code in (400, 422) and any(w in low for w in ("json mode", "responsemimetype", "responseschema", "schema", "generationconfig")):
+                continue
+            break
         if r.status_code != 200:
             _fail(r, mdl, k)
         data = r.json()
