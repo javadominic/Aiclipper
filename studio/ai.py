@@ -383,6 +383,8 @@ def save(provider_id: str, model_ids, address: str = "", new_key=None, keys=None
             "key": pool[0]["key"] if pool else "", "keys": pool}
     if existing.get("fallback"):
         data["fallback"] = existing["fallback"]     # saving the primary settings leaves the backup alone
+    if existing.get("fallback2"):
+        data["fallback2"] = existing["fallback2"]   # saving primary leaves second backup alone
     _write(data)
     return public()
 
@@ -533,7 +535,8 @@ def remove_fallback2() -> dict:
 # Words that mean "this 400 is about a setting we added", so it is worth asking again without it. Any other 400
 # is about the request itself, and asking twice more would only waste what is left of the key's quota.
 _SETTING_WORDS = ("response_format", "temperature", "json_object", "json mode", "json_schema",
-                  "unsupported parameter", "unknown parameter", "not supported", "unsupported value")
+                  "unsupported parameter", "unknown parameter", "not supported", "unsupported value",
+                  "failed to generate json", "failed_generation")
 
 
 def _about_settings(text: str) -> bool:
@@ -830,8 +833,9 @@ def _limit_kind(e) -> str:
         return "model"
     if ("429" in s or "quota" in s or "rate limit" in s or "rate_limit" in s or "exhausted" in s
             or "too many requests" in s or "insufficient" in s or "credit" in s or "billing" in s):
-        if any(w in s for w in ("per day", "daily", "rpd", "quota", "resource_exhausted",
-                                "insufficient", "credit", "billing")):
+        if any(w in s for w in ("per day", "daily", "rpd", "credit_balance_exhausted",
+                                "insufficient_quota", "insufficient credits", "exceeded your current quota",
+                                "billing")):
             return "day"
         return "minute"
     return ""

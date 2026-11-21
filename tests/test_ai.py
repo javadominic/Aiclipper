@@ -131,6 +131,9 @@ def rotate_post(url, json=None, headers=None, timeout=None, **_k):  # noqa: A002
 
 ai.httpx.post = rotate_post
 config.AI_PROVIDER, config.AI_BASE_URL = "gemini", ""
+config.AI_FALLBACK_PROVIDER, config.AI_FALLBACK2_PROVIDER = "", ""
+ai.remove_fallback()
+ai.remove_fallback2()
 ai.save("gemini", "model-a, model-b", "", keys=[{"key": K1, "label": "one"}, {"key": K2, "label": "two"}])
 
 # note: check() in this file takes a true/false, not a pair to compare, so every assertion below has to say

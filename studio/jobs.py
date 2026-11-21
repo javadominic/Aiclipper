@@ -728,11 +728,12 @@ def _run_job(job):
         quota = max(1, math.ceil(left / (len(blocks) - bi)))
         s0 = int((a - lo) / 16000)
         _cr = creators.get(job.get("creator")) if job.get("creator") else None
+        cr_name = (_cr.get("name") if _cr else "") or job.get("uploader", "")
         _cb = _cr.get("campaign_brief", "") if _cr else ""
         if not _cb:
             _cb = job.get("campaign_brief", "")   # fall back to per-video brief pasted at clip time
         found, ai = brain.find_clips(bw, db[s0: s0 + int((b - a) / 16000) + 1], (b - a) / 16000, job["title"],
-                                     job["uploader"], quota, int(o["min_len"]), int(o["max_len"]), notes.append, campaign_brief=_cb)
+                                     cr_name, quota, int(o["min_len"]), int(o["max_len"]), notes.append, campaign_brief=_cb)
         tokens += ai.get("tokens", 0)
         model = ai.get("model") or model
         if ai.get("note"):

@@ -140,7 +140,7 @@ def _hook_similar(a, b):
     return bool(a) and bool(b) and difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() >= 0.75
 
 
-def _tidy(c, s, e):
+def _tidy(c, s, e, uploader=""):
     """Whatever the AI answered, only this shape ever leaves here: clamped numbers, short link-free text."""
     cat = str(c.get("category", "other")).lower()
     tags = c.get("hashtags") if isinstance(c.get("hashtags"), list) else []
@@ -149,12 +149,31 @@ def _tidy(c, s, e):
     title = roman.to_roman(_text(c.get("title"), 100))
     title_alt = roman.to_roman(_text(c.get("title_alt"), 100))
     best_title, other_title = (title, title_alt) if _score_title(title) >= _score_title(title_alt) else (title_alt, title)
+
+    # Creator name rule: title and description start with creator's name by default
+    up = (uploader or "").strip()
+    if up:
+        if best_title and not best_title.lower().startswith(up.lower()):
+            best_title = f"{up}: {best_title}"
+        if other_title and not other_title.lower().startswith(up.lower()):
+            other_title = f"{up}: {other_title}"
+        desc = roman.to_roman(_text(c.get("description"), 300))
+        if desc and not desc.lower().startswith(up.lower()):
+            desc = f"{up} - {desc}"
+        elif not desc:
+            desc = f"{up} stream highlight. Subscribe for more daily clips!"
+        clean_up = re.sub(r"\W", "", up)
+        if clean_up and clean_up.lower() not in [t.lower() for t in tags]:
+            tags.insert(0, clean_up)
+    else:
+        desc = roman.to_roman(_text(c.get("description"), 300))
+
     return {
         "start": s, "end": e, "score": max(0, min(100, int(_num(c.get("score"))))),
         "category": cat if cat in CATEGORIES else "other",
         "hook": roman.to_roman(_text(c.get("hook"), 60)).upper(), "title": best_title or other_title,
         "title_alt": other_title if other_title != (best_title or other_title) else "",
-        "description": roman.to_roman(_text(c.get("description"), 300)),
+        "description": desc,
         "hashtags": [t for t in tags if t][:8],
         "highlight_words": [roman.to_roman(_text(h, 30)) for h in words][:8],
         "reason": _text(c.get("reason"), 200),
@@ -242,12 +261,17 @@ def ask_ai(prompt, schema=None, purpose="AI call"):
                 return out, ai.describe(cand), sent + wrote
             except Exception as e:  # noqa: BLE001
                 last, used = e, cand
-                if ai.note_failure(cand, e):
+                kind = ai.note_failure(cand, e)
+                if kind:
                     moved += 1                  # a limit, a dead key or a wrong model: straight on to the next
+                    if kind == "minute":
+                        time.sleep(1.0)         # short pacing delay between distinct keys so they don't fire in a burst
                     break
                 if _worth_retrying(e) and attempt == 0:
                     time.sleep(2)
                     continue
+                # Not a 500 network retry, but format/API error (e.g. Groq 400): proceed to next candidate!
+                moved += 1
                 break
     prov = used.get("provider") if used else None
     mdl = used.get("model") if used else None
@@ -294,10 +318,34 @@ def _snap(clip, lines, words, min_len, max_len, duration):
     return round(max(0.0, s - 0.15), 2), round(min(duration, e + tail), 2)
 
 
-def fallback_by_loudness(db, words, n, max_len, duration):
-    """No AI available: take the loudest stretches that contain speech."""
+def fallback_by_loudness(db, words, n, max_len, duration, title="", uploader=""):
+    """No AI available: take the loudest stretches with creator-first viral SEO & FYP templates."""
+    db = np.asarray(db, dtype=np.float32)
     z = loud_zscore(db)
     picks, order = [], np.argsort(-z)
+    up = (uploader or "").strip()
+    clean_tag = re.sub(r"\W", "", up) if up else ""
+
+    title_templates = [
+        f"{up}: CRAZIEST MOMENT ON STREAM! 🔥" if up else "CRAZIEST MOMENT ON STREAM! 🔥",
+        f"{up} CANNOT BELIEVE THIS HAPPENED 😱" if up else "HE CANNOT BELIEVE THIS HAPPENED 😱",
+        f"{up} WENT ABSOLUTELY CRAZY HERE 💀" if up else "HE WENT ABSOLUTELY CRAZY HERE 💀",
+        f"{up}: BEST HIGHLIGHT OF THE DAY ⚡" if up else "BEST HIGHLIGHT OF THE DAY ⚡",
+        f"{up} DID NOT EXPECT THIS TO HAPPEN 😂" if up else "NOBODY EXPECTED THIS TO HAPPEN 😂",
+        f"{up}: INSANE STREAM REACTION 💥" if up else "INSANE STREAM REACTION 💥",
+    ]
+    hook_templates = [
+        "WAIT FOR IT",
+        "HE ACTUALLY DID THIS",
+        "NO WAY THIS HAPPENED",
+        "WATCH TILL THE END",
+        "THE MOMENT HE KNEW",
+        "HOW DID HE DO THAT",
+    ]
+    desc_prefix = f"{up}: " if up else ""
+    desc_tail = f"\n\nOriginal video: {title}" if title else ""
+    default_tags = [t for t in [clean_tag, "fyp", "shorts", "viral", "trending", "gaming", "streamer"] if t]
+
     for sec in order:
         s = max(0.0, float(sec) - max_len * 0.6)
         e = min(duration, s + max_len)
@@ -305,9 +353,17 @@ def fallback_by_loudness(db, words, n, max_len, duration):
             continue
         if not any(s <= w["s"] <= e for w in words):
             continue
-        picks.append({"start": s, "end": e, "score": 50, "category": "other", "hook": "WAIT FOR IT",
-                      "title": "Loud moment", "description": "", "hashtags": [], "highlight_words": [],
-                      "reason": "Picked by loudness because the AI was unavailable."})
+        idx = len(picks) % len(title_templates)
+        picks.append({
+            "start": s, "end": e, "score": 65, "category": "highlight",
+            "hook": hook_templates[idx % len(hook_templates)],
+            "title": title_templates[idx],
+            "title_alt": f"{up} Stream Highlight" if up else "Stream Highlight",
+            "description": f"{desc_prefix}Watch what happened live! Drop a comment and subscribe for more daily clips.{desc_tail}",
+            "hashtags": default_tags,
+            "highlight_words": [],
+            "reason": "Picked by peak loudness & creator viral SEO FYP template (AI backup mode)."
+        })
         if len(picks) >= n:
             break
     return picks
@@ -358,8 +414,8 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             log(f"AI window {a:.0f}-{b:.0f}s failed: {e}")
     note = ""
     if not used_model:
-        found = fallback_by_loudness(db, words, max_clips, max_len, duration)
-        note = "The AI was unavailable, so clips were picked by loudness only."
+        found = fallback_by_loudness(db, words, max_clips, max_len, duration, title=title, uploader=uploader)
+        note = "The AI was unavailable, so clips were picked by loudness with creator SEO templates."
     clips = []
     for c in sorted(found, key=lambda c: -_num(c.get("score"))):
         s, e = _snap(c, lines, words, min_len, max_len, duration)
@@ -367,7 +423,7 @@ def find_clips(words, db, duration, title="", uploader="", max_clips=6, min_len=
             continue
         if _overlaps(s, e, clips):
             continue  # overlaps a better clip
-        tidy = _tidy(c, s, e)
+        tidy = _tidy(c, s, e, uploader=uploader)
         if any(_hook_similar(tidy["hook"], k["hook"]) for k in clips):
             continue  # near-duplicate hook: skip to keep hooks varied across the batch
         clips.append(tidy)
