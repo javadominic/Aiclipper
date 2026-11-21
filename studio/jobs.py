@@ -107,7 +107,7 @@ _by_user: dict = {}                       # user -> {job id: job}: listing one p
 _lock = threading.RLock()
 on_clip_ready: list = []   # callbacks (job, clip), run once when a clip first finishes
 
-DEFAULTS = {"max_clips": 6, "min_len": 15, "max_len": 60, "style": "bounce", "layout": "blur", "quality": 720,
+DEFAULTS = {"max_clips": 6, "min_len": 15, "max_len": 60, "style": "bounce", "layout": "blur", "cam_corner": "top-left", "quality": 720,
             "range_start": None, "range_end": None}
 
 
@@ -130,6 +130,8 @@ def clean_options(options) -> dict:
             v = v if v in render.STYLES else DEFAULTS["style"]
         elif k == "layout":
             v = v if v in render.LAYOUTS else DEFAULTS["layout"]
+        elif k == "cam_corner":
+            v = v if v in render.CAM_CORNERS else DEFAULTS["cam_corner"]
         else:                                    # range_start, range_end: seconds into the video
             v = float(v)
             if not math.isfinite(v) or v < 0:
@@ -284,7 +286,7 @@ def create(source: dict, options: dict, enqueue=True, creator=None, kind="video"
     c = creators.get(creator) if creator else None
     if c:
         d = creators.root(c["id"]) / ("live" if kind == "live" else "videos") / jid
-        base = {**DEFAULTS, **{k: c[k] for k in ("max_clips", "min_len", "max_len", "style", "layout")}}
+        base = {**DEFAULTS, **{k: c[k] for k in ("max_clips", "min_len", "max_len", "style", "layout", "cam_corner") if k in c}}
     else:
         d, base, creator = config.user_dir(ctx.uid()) / "jobs" / jid, dict(DEFAULTS), None
     d.mkdir(parents=True)
@@ -373,7 +375,7 @@ def request_render(jid, cid, changes: dict):
         raise ValueError("Those times aren't valid.")
     if not 3 <= new["end"] - new["start"] <= 180:
         raise ValueError("A clip can be 3 to 180 seconds long.")
-    for k in ("hook", "title", "description", "style", "layout"):
+    for k in ("hook", "title", "description", "style", "layout", "cam_corner"):
         if k in changes:
             new[k] = str(changes[k])[:{"hook": 60, "title": 100, "description": 2000}.get(k, 20)]
     if "hashtags" in changes:
@@ -388,6 +390,8 @@ def request_render(jid, cid, changes: dict):
         new["style"] = DEFAULTS["style"]
     if new.get("layout") not in render.LAYOUTS:
         new["layout"] = DEFAULTS["layout"]
+    if new.get("cam_corner") not in render.CAM_CORNERS:
+        new["cam_corner"] = DEFAULTS["cam_corner"]
     clip.update(new, status="queued")
     save(job)
     _q.put(("clip", jid, cid))
@@ -424,7 +428,11 @@ def render_one(job, clip, words):
             return
         # the last word on it: whatever was said, nothing is drawn in Hindi or Urdu script
         near = [dict(w, s=w["s"] - off, e=w["e"] - off) for w in roman.words(raw)]
-        out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"])
+        _cr = creators.get(job.get("creator")) if job.get("creator") else None
+        cr_name = (_cr.get("name") if _cr else "") or job.get("uploader", "") or job.get("title", "")
+        cam_corner = clip.get("cam_corner") or job.get("options", {}).get("cam_corner") or "top-left"
+        out = render.render_clip(src, d / "clips", clip["id"], local, near, job["width"], job["height"],
+                                cam_corner=cam_corner, uploader=cr_name)
         if clip.get("status") == "cancelled":
             for ext in ("mp4", "jpg", "ass"):
                 (d / "clips" / f"{clip['id']}.{ext}").unlink(missing_ok=True)
@@ -749,7 +757,8 @@ def _run_job(job):
             notes.append(ai["note"])
         for c in found:
             c.update(id=f"clip{len(job['clips']) + 1:02d}", start=round(c["start"] + shift, 2),
-                     end=round(c["end"] + shift, 2), style=o["style"], layout=o["layout"], status="queued", version=0)
+                     end=round(c["end"] + shift, 2), style=o["style"], layout=o["layout"],
+                     cam_corner=o.get("cam_corner", "top-left"), status="queued", version=0)
             job["clips"].append(c)
             futures.append((renders.submit(ctx.bind(make), c, list(words)), c))
         job["ai"] = {"model": model, "tokens": tokens, "note": "", "log": notes[-5:]}

@@ -78,7 +78,17 @@ def install_fonts():
             shutil.copyfile(f, config.FONTS_DIR / f.name)
 
 
-LAYOUTS = {"blur": "Full frame + blurred fill", "zoom": "Zoomed in + blurred fill", "crop": "Fill the screen (centre crop)"}
+LAYOUTS = {"blur": "Full frame + blurred fill", "zoom": "Zoomed in + blurred fill", "crop": "Fill the screen (centre crop)",
+           "split": "Gaming split: facecam + gameplay"}
+
+# Where the facecam box sits in a typical 16:9 source video.
+# Values are fractions of the source width/height.
+CAM_CORNERS = {
+    "top-left":     {"x": 0.0,  "y": 0.0,  "w": 0.30, "h": 0.36},
+    "top-right":    {"x": 0.70, "y": 0.0,  "w": 0.30, "h": 0.36},
+    "bottom-left":  {"x": 0.0,  "y": 0.64, "w": 0.30, "h": 0.36},
+    "bottom-right": {"x": 0.70, "y": 0.64, "w": 0.30, "h": 0.36},
+}
 
 
 def _ts(t):
@@ -110,6 +120,10 @@ def _groups(words, per):
 
 def geometry(src_w, src_h, layout):
     """Where the video sits in the 1080x1920 frame, and where hook and captions go."""
+    if layout == "split":
+        # Top panel 760px (facecam), bar 80px, bottom panel 1080px = 1920 total.
+        # Hook sits in the upper facecam panel (y=240); captions sit in gameplay panel (y=1500).
+        return layout, H, 240, 1500
     if src_h >= src_w and layout != "crop":
         layout = "crop"  # already vertical or square: nothing to gain from a blurred fill
     if layout == "blur":
@@ -155,7 +169,7 @@ def _hook_events(hook, dur, y):
     return ev
 
 
-def build_ass(words, start, end, hook, style_name, highlight, hook_y, cap_y) -> str:
+def build_ass(words, start, end, hook, style_name, highlight, hook_y, cap_y, brand: str = "") -> str:
     st = STYLES.get(style_name, STYLES["bounce"])
     words = [dict(w, s=w["s"] - CAPTION_LEAD, e=w["e"] - CAPTION_LEAD) for w in words]
     strong = {_key(h) for h in highlight if _key(h)}
@@ -170,12 +184,19 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,{st['font']},{st['size']},&H00{st['base']},&H00{st['base']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,{st['outline']},0,5,0,0,0,1
 Style: Hook,{HOOK['font']},{HOOK['size']},&H00{HOOK['ink']},&H00{HOOK['ink']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+Style: Brand,Poppins ExtraBold,40,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,3,0,5,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     dur = end - start
     ev = _hook_events(_clean(hook), dur, hook_y)
+    if brand:
+        b_clean = _clean(brand).upper()
+        if len(b_clean) > 34:
+            b_clean = b_clean[:33] + "…"
+        span = f"{_ts(0)},{_ts(dur)}"
+        ev.append(f"Dialogue: 5,{span},Brand,,0,0,0,,{{\\an5\\pos({W // 2},800)\\fad(140,0)}}{b_clean}")
     f = _Font.get(st["font"])
     inside = [dict(w, w=_clean(w["w"])) for w in words if w["s"] >= start - 0.05 and w["s"] < end]
     inside = sorted((w for w in inside if w["w"]), key=lambda w: w["s"])
@@ -227,7 +248,39 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return head + "\n".join(ev) + "\n"
 
 
+def _split_filter(src_w, src_h, cam_corner):
+    """FFmpeg filtergraph for the gaming split layout:
+      0 – 760 px:   Facecam corner scaled and cropped to fill top section
+      760 – 840 px: Solid black divider bar (80px)
+      840 – 1920 px: 1:1 gameplay slice center-cropped to 1080×1080
+    Stacked vertically with vstack=inputs=3 to make 1080×1920.
+    """
+    cam = CAM_CORNERS.get(cam_corner) or CAM_CORNERS["top-left"]
+    cw = max(2, int(src_w * cam["w"]) & ~1)
+    ch = max(2, int(src_h * cam["h"]) & ~1)
+    cx = min(max(0, int(src_w * cam["x"]) & ~1), max(0, src_w - cw))
+    cy = min(max(0, int(src_h * cam["y"]) & ~1), max(0, src_h - ch))
+
+    face_h = 760
+    bar_h = 80
+    game_h = H - face_h - bar_h   # 1080
+
+    fc = (
+        f"[0:v]fps={config.OUT_FPS},split=3[raw_face][raw_game][raw_bar];"
+        f"[raw_face]crop={cw}:{ch}:{cx}:{cy},"
+        f"scale={W}:{face_h}:force_original_aspect_ratio=increase,"
+        f"crop={W}:{face_h}[face];"
+        f"[raw_game]crop='min(iw,ih)':'min(iw,ih)':'(iw-min(iw,ih))/2':'(ih-min(iw,ih))/2',"
+        f"scale={W}:{game_h}[game];"
+        f"[raw_bar]scale={W}:{bar_h},drawbox=x=0:y=0:w={W}:h={bar_h}:color=black:t=fill[bar];"
+        f"[face][bar][game]vstack=inputs=3,setsar=1[v0];"
+    )
+    return fc
+
+
 def _filter(layout, fg_h):
+    if layout == "split":
+        raise RuntimeError("_split_filter must be called directly for the split layout")
     if layout == "crop":
         return f"[0:v]fps={config.OUT_FPS},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[v0];"
     return (f"[0:v]fps={config.OUT_FPS},split=2[a][b];"
@@ -241,31 +294,38 @@ _qsv_ok = None
 RENDER_SECONDS = 600      # one clip's video encode; far beyond normal, so a frozen encoder is stopped, not waited on
 
 
-def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, src_w: int, src_h: int) -> dict:
+def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, src_w: int, src_h: int,
+                cam_corner: str = "top-left", uploader: str = "") -> dict:
     """Writes <name>.mp4, <name>.jpg and <name>.ass into out_dir. Returns file names."""
     out_dir.mkdir(parents=True, exist_ok=True)
     start, end = clip["start"], clip["end"]
     layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, clip.get("layout", "blur"))
     ass = build_ass(words, start, end, clip.get("hook", ""), clip.get("style", "bounce"),
-                    clip.get("highlight_words", []), hook_y, cap_y)
+                    clip.get("highlight_words", []), hook_y, cap_y,
+                    brand=uploader if layout == "split" else "")
     # The clip is made in a short work folder and moved into place afterwards. The caption step of ffmpeg cannot
     # open files whose full path is longer than 260 characters on Windows, which a data folder deep inside other
     # folders easily reaches. Inside the work folder every name is short and relative (a drive colon would also
     # break the filter syntax).
     work = Path(tempfile.mkdtemp(prefix="pk"))
     try:
-        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass)
+        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass,
+                          src_w=src_w, src_h=src_h, cam_corner=cam_corner)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str) -> dict:
+def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str,
+               src_w: int = 0, src_h: int = 0, cam_corner: str = "top-left") -> dict:
     global _qsv_ok
     (work / f"{name}.ass").write_text(ass, encoding="utf-8")
     (work / "f").mkdir()
     for f in config.FONTS_DIR.glob("*.ttf"):
         shutil.copyfile(f, work / "f" / f.name)
-    fc = _filter(layout, fg_h) + f"[v0]ass=filename={name}.ass:fontsdir=f[v]"
+    if layout == "split":
+        fc = _split_filter(src_w, src_h, cam_corner) + f"[v0]ass=filename={name}.ass:fontsdir=f[v]"
+    else:
+        fc = _filter(layout, fg_h) + f"[v0]ass=filename={name}.ass:fontsdir=f[v]"
     base = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a:0", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-pix_fmt"]

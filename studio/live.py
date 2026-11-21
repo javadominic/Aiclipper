@@ -445,6 +445,7 @@ class Session:
     def _add_clip(self, c):
         self.n += 1
         c.update(id=f"clip{self.n:03d}", style=self.settings["style"], layout=self.settings["layout"],
+                 cam_corner=self.settings.get("cam_corner", "top-left"),
                  status="queued", version=0, made_at=time.time())
         with self.lock:
             self.job["clips"].append(c)
