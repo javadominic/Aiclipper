@@ -42,6 +42,9 @@ Channel: {uploader}
 
 Pick up to {n} moments that would work as standalone clips for someone who has never seen the stream:
 funny moments, fails, clutch plays, rage, shock, hot takes, or a short story with a payoff.
+IMPORTANT: Capture the WHOLE conversation and full narrative arc for each moment. Do not just take the last
+few seconds of a reaction; include the initial question, dialogue, or buildup so the viewer understands
+the complete context from start to finish.
 """
 
 LIVE_NOTE = """
@@ -52,12 +55,14 @@ Most checks should return []. Only return a moment you would stop scrolling for.
 
 RULES = """
 Rules:
-- Each clip is {min_len} to {max_len} seconds. Use the [seconds] values for start and end. Do not default to
-  the maximum length: use only as much time as the moment actually needs to land its payoff. A story or
-  clutch moment may run closer to {max_len}s if the build-up matters; a quick funny/rage one-liner should
-  usually be shorter. A clean 20-second moment beats a padded, dragged-out one.
-- Start on the setup line, not mid-sentence. End right after the payoff or reaction, on the last word of a
-  complete sentence: never in the middle of a sentence or a thought. The clip must make sense on its own.
+- Capture the WHOLE CONVERSATION or the FULL MOMENT: do NOT just clip the final punchline, reaction, or the last few seconds!
+  A clip must tell the complete story: start where the dialogue, topic, question, or story begins (the setup),
+  include the full back-and-forth conversation, and end cleanly right after the payoff or reaction finishes.
+  Someone watching should never wonder "what are they talking about?" or feel that the beginning was cut off.
+- Each clip is {min_len} to {max_len} seconds. Use the [seconds] values for start and end. Make sure the duration
+  comfortably fits the entire conversation and buildup leading up to the payoff without rushing.
+- Start at the opening sentence of the conversation/topic, not mid-sentence. End right after the payoff or reaction,
+  on the last word of a complete sentence: never in the middle of a sentence or a thought. The clip must make sense on its own.
 - Do not pick intros, sponsor reads, "like and subscribe", or dead air.
 - Skip weak moments. Fewer strong clips beat many weak ones. Return [] if nothing is worth clipping.
 - score: 0-100, how likely a stranger keeps watching. Be honest; most clips are 50-80.
@@ -298,7 +303,7 @@ def _snap(clip, lines, words, min_len, max_len, duration):
     s, e = _num(clip.get("start"), -1), _num(clip.get("end"), -1)
     if s < 0 or e <= s:
         return 0.0, 0.0          # not a usable answer: callers drop it on the minimum-length check
-    starts = [l["s"] for l in lines if abs(l["s"] - s) <= 4]
+    starts = [l["s"] for l in lines if -6.0 <= l["s"] - s <= 3.0]
     if starts:
         s = min(starts, key=lambda x: abs(x - s))
     lo, hi = s + min_len, min(s + max_len, duration)
@@ -347,7 +352,8 @@ def fallback_by_loudness(db, words, n, max_len, duration, title="", uploader="")
     default_tags = [t for t in [clean_tag, "fyp", "shorts", "viral", "trending", "gaming", "streamer"] if t]
 
     for sec in order:
-        s = max(0.0, float(sec) - max_len * 0.6)
+        # Look back 70% of max_len so the entire conversational buildup leading to the loud peak is included
+        s = max(0.0, float(sec) - max_len * 0.7)
         e = min(duration, s + max_len)
         if any(not (e <= p["start"] or s >= p["end"]) for p in picks):
             continue
