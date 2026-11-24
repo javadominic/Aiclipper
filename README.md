@@ -229,14 +229,7 @@ To connect YouTube Shorts:
 
 ## 📄 License
 
-**Copyright © 2025 Saeed Ansari — Arviq Digital Solution.**
-
 This project is open-source and licensed under the [MIT License](LICENSE).
 
-- **Owner:** Saeed Ansari
-- **Company:** Arviq Digital Solution
-- **GitHub:** [github.com/javadominic](https://github.com/javadominic)
-- **LinkedIn:** [linkedin.com/in/saeed-ansari-cyber](https://www.linkedin.com/in/saeed-ansari-cyber/)
-- **Repository:** [github.com/javadominic/Aiclipper](https://github.com/javadominic/Aiclipper)
 
 Subtitle display typography (Anton, Archivo Black, Poppins) licensed under the SIL Open Font License.
