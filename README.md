@@ -2,7 +2,7 @@
 ### Open-Source AI Video Clipper & Automated Shorts Maker
 **Turn YouTube, Twitch & Kick live streams and long videos into viral, captioned vertical clips in minutes.**
 
-[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![FFmpeg Full](https://img.shields.io/badge/FFmpeg-libass%20enabled-green.svg)](https://ffmpeg.org/)
 [![Self-Hosted](https://img.shields.io/badge/Privacy-100%25%20Local%20%26%20Self--Hosted-darkgreen.svg)](#privacy--security)
@@ -229,9 +229,9 @@ To connect YouTube Shorts:
 
 ## 📄 License
 
-**Copyright © 2025 Saeed Ansari — Arviq Digital Solution. All Rights Reserved.**
+**Copyright © 2025 Saeed Ansari — Arviq Digital Solution.**
 
-This software is proprietary and confidential. No part of this codebase may be copied, modified, distributed, sublicensed, or used in any form without the express written permission of the copyright owner.
+This project is open-source and licensed under the [MIT License](LICENSE).
 
 - **Owner:** Saeed Ansari
 - **Company:** Arviq Digital Solution
